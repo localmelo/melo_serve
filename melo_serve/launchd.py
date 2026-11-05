@@ -67,16 +67,26 @@ def _target() -> str:
     return f"gui/{os.getuid()}/{LABEL}"
 
 
-def install() -> Path:
+def install() -> str:
+    """Make the service match what ``render`` writes now.
+
+    Returns ``"unchanged"`` (nothing touched: the daemon keeps its models),
+    ``"installed"`` (new, or only needed loading) or ``"updated"`` (the plist
+    differed, so the daemon was restarted).
+    """
     path = plist_path()
+    wanted = render(program())
+    current = path.read_bytes() if path.exists() else None
+    if current == wanted and status()["loaded"]:
+        return "unchanged"
     paths.ensure_home()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(render(program()))
+    path.write_bytes(wanted)
     _launchctl("bootout", _target())
     done = _launchctl("bootstrap", f"gui/{os.getuid()}", str(path))
     if done.returncode != 0:
         raise RuntimeError(done.stderr.strip() or "launchctl bootstrap failed")
-    return path
+    return "updated" if current not in (None, wanted) else "installed"
 
 
 def uninstall() -> bool:
@@ -94,6 +104,7 @@ def status() -> dict[str, Any]:
     found = re.search(r"\bpid = (\d+)", out.stdout) if out else None
     return {
         "installed": installed,
+        "loaded": bool(out and out.returncode == 0),
         "running": running,
         "pid": int(found.group(1)) if found else None,
     }
