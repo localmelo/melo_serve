@@ -9,7 +9,6 @@ oMLX's ``settings.json``.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import signal
 from pathlib import Path
@@ -19,6 +18,7 @@ from melo_serve.catalog import Pick
 from melo_serve.settings import Settings
 
 APP_CLI = "/Applications/oMLX.app/Contents/MacOS/omlx-cli"
+USER_APP_CLI = "~/Applications/oMLX.app/Contents/MacOS/omlx-cli"  # where get puts it
 VERSION = "0.7.3"
 DMG_BASE = f"https://github.com/jundot/omlx/releases/download/v{VERSION}/"
 DMGS = (  # (first macOS major it is for, file, bytes, sha256); one DMG per macOS line
@@ -80,19 +80,10 @@ class OmlxAdapter(Adapter):
     key = "omlx"
     name = "oMLX"
     default_command = ("omlx",)
-    install_hint = (
-        "brew tap jundot/omlx https://github.com/jundot/omlx && "
-        "brew install jundot/omlx/omlx"
-    )
+    install_hint = "melo-serve get <pick> installs it"
     tested_versions = ("0.7.",)
-
-    def command(self, settings: Settings) -> tuple[str, ...]:
-        configured = settings.backend(self.key).command
-        if configured:
-            return configured
-        if shutil.which("omlx") is None and os.path.exists(APP_CLI):
-            return (APP_CLI,)
-        return self.default_command
+    known_paths = (APP_CLI, USER_APP_CLI)
+    downloads_models = True
 
     def install_plan(self, macos: tuple[int, ...]) -> InstallPlan | None:
         """The pinned DMG for this macOS: 15, or 26 and later; none for older."""

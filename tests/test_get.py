@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from melo_serve import cli, fit, get, paths, settings
+from melo_serve.adapters import omlx
 
 PICK = "4b"  # qwen3-4b-omlx
 NAME = "Qwen3 4B Instruct"
@@ -65,6 +66,11 @@ def hub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[FakeHub, Path]
 
     hf = tmp_path / "hf"
     fake = FakeHub(hf)
+    backend = tmp_path / "bin" / "omlx"  # a tested oMLX is already installed
+    backend.parent.mkdir()
+    backend.write_text(f"#!/bin/sh\necho omlx {omlx.VERSION}\n")
+    backend.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{backend.parent}:{os.environ['PATH']}")
     monkeypatch.setenv("HF_HOME", str(hf))
     monkeypatch.delenv("HF_HUB_CACHE", raising=False)
     monkeypatch.setenv("HF_HUB_DISABLE_TELEMETRY", "0")  # get must switch it off
@@ -94,9 +100,10 @@ def test_a_download_reports_progress_and_remembers_the_cache(
     assert code == 0 and fake.calls == [REPO]
     states = [e["state"] for e in events]
     assert states[0] == "done" and events[0]["item"] == "config:hf_home"
-    assert states[1:] == ["running", "running", "done"]
-    assert all(e["item"] == "model:qwen3-4b-omlx" for e in events[1:])
-    assert all(e["total_bytes"] == TOTAL for e in events[1:])
+    assert (events[1]["item"], states[1]) == ("backend:omlx", "skipped")
+    assert states[2:] == ["running", "running", "done"]
+    assert all(e["item"] == "model:qwen3-4b-omlx" for e in events[2:])
+    assert all(e["total_bytes"] == TOTAL for e in events[2:])
     assert events[-1] == {
         "item": "model:qwen3-4b-omlx", "state": "done", "done_bytes": TOTAL,
         "total_bytes": TOTAL, "line": f"downloaded {NAME} into {hf}",
@@ -107,7 +114,8 @@ def test_a_download_reports_progress_and_remembers_the_cache(
     code, events, _ = run_get(capsys, "--json")  # again: the model is there
     assert code == 0 and fake.calls == [REPO]
     assert [(e["state"], e["line"]) for e in events] == [
-        ("skipped", "already downloaded, skipped")
+        ("skipped", f"already installed ({omlx.VERSION}), skipped"),
+        ("skipped", "already downloaded, skipped"),
     ]
 
 
@@ -127,6 +135,7 @@ def test_a_complete_model_is_skipped_and_a_new_cache_folder_is_remembered(
     assert code == 0 and fake.calls == []
     assert out.splitlines() == [
         f"saved hf_home = {elsewhere} in {paths.config_path()}",
+        f"oMLX: already installed ({omlx.VERSION}), skipped",
         f"{NAME}: already downloaded, skipped",
     ]
     assert settings.load().hf_home == str(elsewhere) and settings.load().chat == "27b"

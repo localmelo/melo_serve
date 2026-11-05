@@ -126,16 +126,20 @@ def pick_rows(
                 **pick.to_json(),
                 "backend_name": adapter.name if adapter else pick.backend,
                 "current": serving is not None and serving.id == pick.id,
-                "problem": adapter.installed(pick, settings)
-                if adapter
-                else f"melo_serve has no backend called {pick.backend}",
+                "problem": (
+                    adapter.installed(pick, settings)
+                    if adapter
+                    else f"melo_serve has no backend called {pick.backend}"
+                ),
                 "fit": checked.to_json(),
             }
         )
     return {
-        "memory": None
-        if memory is None
-        else {"total_gb": round(memory.total_gb), "free_pct": memory.free_pct},
+        "memory": (
+            None
+            if memory is None
+            else {"total_gb": round(memory.total_gb), "free_pct": memory.free_pct}
+        ),
         "picks": rows,
     }
 
@@ -216,12 +220,14 @@ class Engine:
                 "since": slot.since,
                 "error": error,
                 "retired": sorted(slot.retired),
-                "process": None
-                if inst is None
-                else {
-                    "pid": inst.child.pid,
-                    "started_at": round(inst.child.started_at, 3),
-                },
+                "process": (
+                    None
+                    if inst is None
+                    else {
+                        "pid": inst.child.pid,
+                        "started_at": round(inst.child.started_at, 3),
+                    }
+                ),
             }
         host = (
             f"[{self.settings.host}]"
@@ -455,9 +461,9 @@ class Engine:
                 "MELO_SERVE_MODEL": pick.served_name,
                 "MELO_SERVE_ROLE": pick.role,
                 "MELO_SERVE_BACKEND": pick.backend,
-                "MELO_SERVE_MEM_GB": f"{checked.need_gb:.0f}"
-                if checked.need_gb
-                else "",
+                "MELO_SERVE_MEM_GB": (
+                    f"{checked.need_gb:.0f}" if checked.need_gb else ""
+                ),
                 "MELO_SERVE_LOAD_MIN": str(
                     max(1, math.ceil((pick.load_s or 300) / 60))
                 ),

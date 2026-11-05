@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -77,7 +78,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     plan.add_argument("--json", action="store_true", help="the plan as JSON")
     get = sub.add_parser(
-        "get", help="download the models of some picks into the Hugging Face cache"
+        "get", help="install the backends of some picks and download their models"
     )
     get.add_argument("picks", nargs="+", metavar="pick")
     get.add_argument("--json", action="store_true", help="progress as JSON lines")
@@ -86,6 +87,10 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="keep the models under PATH/hub, and remember it",
     )
+    get.add_argument(
+        "--skip", action="append", default=[], metavar="ITEM",
+        help="leave out an item of this run, e.g. backend:omlx or model:<pick> (repeatable)",
+    )  # fmt: skip
     sub.add_parser("doctor", help="check the backends, the login item and memory")
     sub.add_parser("install", help="start melo_serve at login")
     sub.add_parser("uninstall", help="remove the login item")
@@ -369,7 +374,14 @@ COMMANDS: dict[str, Callable[[argparse.Namespace, Settings, list[str]], int]] = 
 }
 
 
+def _drop_relative_path_entries() -> None:
+    """An empty or relative PATH entry would run a ``brew`` from the working folder."""
+    entries = os.environ.get("PATH", os.defpath).split(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join(filter(os.path.isabs, entries))
+
+
 def main(argv: list[str] | None = None) -> int:
+    _drop_relative_path_entries()
     args = _parser().parse_args(argv)
     overrides = list(args.overrides)
     if getattr(args, "port", None) is not None:

@@ -63,11 +63,16 @@ class Fit:
         }
 
 
-def free_bytes(path: Path) -> int:
-    """Free space on the volume *path* is, or would be, on."""
+def existing_parent(path: Path) -> Path:
+    """*path*, or its nearest parent that exists."""
     while not path.exists() and path != path.parent:
         path = path.parent
-    return shutil.disk_usage(path).free
+    return path
+
+
+def free_bytes(path: Path) -> int:
+    """Free space on the volume *path* is, or would be, on."""
+    return shutil.disk_usage(existing_parent(path)).free
 
 
 def size_text(count: int) -> str:

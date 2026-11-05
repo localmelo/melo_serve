@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "melo-serve"
-version = "0.2.0"
+version = "0.3.0"
 description = "Run and switch local model servers on a Mac behind one stable OpenAI-compatible address."
 readme = "README.md"
 license = "MIT"

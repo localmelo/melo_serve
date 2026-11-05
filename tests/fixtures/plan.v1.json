@@ -49,7 +49,8 @@
       "size_bytes": 22764000000,
       "dest": "~/models/huggingface",
       "state": "todo",
-      "role": "chat"
+      "role": "chat",
+      "backend": "splash"
     },
     {
       "id": "model:qwen3-embedding-0.6b-omlx",
@@ -60,12 +61,17 @@
       "dest": "~/models/huggingface",
       "state": "partial",
       "role": "embedding",
-      "cached_bytes": 500000000
+      "cached_bytes": 500000000,
+      "backend": "omlx"
     }
   ],
   "download_bytes": 24897729252,
   "enough_disk": true,
   "alternatives": [
-    {"id": "qwen3-8b-omlx", "name": "Qwen3 8B", "backend": "omlx"}
+    {
+      "id": "qwen3-8b-omlx",
+      "name": "Qwen3 8B",
+      "backend": "omlx"
+    }
   ]
 }
