@@ -15,3 +15,9 @@ melo_serve has no release yet.
   switch gets `503` with `Retry-After`. A model loads at its first request and frees its memory after `idle_release`
   (10 minutes) without requests. A pick that would leave too little free memory is refused, and one that fails to
   start is replaced by the one before. `melo-serve install` starts melo_serve at login.
+
+### Changed
+
+- Only the OpenAI API reaches the models through the front door. A path outside `/v1` that is not melo_serve's own
+  (`/health`, `/melo/v1/state`) gets `404` `not_here`, as `/melo/*`, `/v1/models/*` and `/v1/memory/*` did, so
+  a backend's own management API, such as oMLX's `/admin/*`, is no longer open to local clients. (#2)
