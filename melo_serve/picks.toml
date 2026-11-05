@@ -1,0 +1,80 @@
+# Built-in picks: a model on a backend.
+#
+# source       Splash: OWNER/REPO:VARIANT. oMLX: a Hugging Face repo (found in the
+#              local Hugging Face cache) or a folder path.
+# served_name  the model id the front door lists and answers to.
+# mem_gb       how far free memory drops while the pick answers, measured on a
+#              Mac with measured_ram_gb of memory; without it the fit check
+#              estimates from disk_gb.
+# load_s, decode_tps: measured on that Mac (decode: a short prompt).
+
+[[pick]]
+id = "qwen3.8-27b-splash"
+aliases = ["27b"]
+name = "Qwen3.8 27B"
+role = "chat"
+backend = "splash"
+source = "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M"
+served_name = "Qwen3.8-27B-Q4KM-splash"
+summary = "balanced; leaves room for other work"
+disk_gb = 21.2
+mem_gb = 21
+measured_ram_gb = 128
+load_s = 16
+decode_tps = 78.2
+caps = ["tools", "vision", "reasoning"]
+min_ram_gb = 48
+
+[[pick]]
+id = "qwen3.8-flash-next-splash"
+aliases = ["flash-next", "fn"]
+name = "Qwen3.8 Flash-Next"
+role = "chat"
+backend = "splash"
+source = "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_XXS"
+served_name = "Qwen3.8-Flash-Next-IQ3XXS-splash"
+summary = "fastest; best run alone"
+disk_gb = 78.4
+mem_gb = 105
+measured_ram_gb = 128
+decode_tps = 134.7
+caps = ["tools", "vision", "reasoning"]
+min_ram_gb = 96
+
+[[pick]]
+id = "qwen3-8b-omlx"
+aliases = ["8b"]
+name = "Qwen3 8B"
+role = "chat"
+backend = "omlx"
+source = "mlx-community/Qwen3-8B-4bit"
+served_name = "Qwen3-8B-4bit"
+summary = "light"
+disk_gb = 4.6
+caps = ["tools", "reasoning"]
+min_ram_gb = 24
+
+[[pick]]
+id = "qwen3-4b-omlx"
+aliases = ["4b"]
+name = "Qwen3 4B Instruct"
+role = "chat"
+backend = "omlx"
+source = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+served_name = "Qwen3-4B-Instruct-2507-4bit"
+summary = "small; for 16 GB Macs"
+disk_gb = 2.3
+caps = ["tools"]
+min_ram_gb = 16
+
+[[pick]]
+id = "qwen3-embedding-0.6b-omlx"
+aliases = ["embed"]
+name = "Qwen3 Embedding 0.6B"
+role = "embedding"
+backend = "omlx"
+source = "Qwen/Qwen3-Embedding-0.6B"
+served_name = "Qwen3-Embedding-0.6B"
+summary = "memory embeddings"
+disk_gb = 1.2
+min_ram_gb = 8
