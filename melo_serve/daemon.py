@@ -129,8 +129,11 @@ async def run(
         # A client that leaves cancels its request, so the backend stops writing it.
         await _serve(router.build(engine), front, handler_cancellation=True),
         # A switch goes on when the command that asked for it quits.
+        # A Unix socket has no TCP keepalive, and a probe that connects and leaves must not log a traceback.
         await _serve(
-            control.build(engine, stopping.set), _control_socket(control_path)
+            control.build(engine, stopping.set),
+            _control_socket(control_path),
+            tcp_keepalive=False,
         ),
     ]
     idle = asyncio.create_task(engine.idle_loop())

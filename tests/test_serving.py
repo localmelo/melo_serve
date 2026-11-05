@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import socket
 from pathlib import Path
 
 import httpx
 import pytest
 
-from melo_serve import cli
+from melo_serve import cli, paths
 from melo_serve.client import Client, ControlError
 from tests.conftest import records, running
 
@@ -65,6 +66,20 @@ async def test_starts_on_first_request_and_relays(tmp_path: Path) -> None:
             and state["roles"]["embedding"]["dims"] == 8
         )
         assert state["roles"]["chat"]["backend_name"] == "Splash"
+
+
+async def test_a_client_that_connects_to_the_control_socket_and_leaves_is_not_an_error(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    async with running(tmp_path):
+        for _ in range(20):  # a liveness probe: connect, then leave at once
+            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            probe.connect(str(paths.socket_path()))
+            probe.close()
+        assert await asyncio.to_thread(Client().state)
+        await asyncio.sleep(0.2)
+    assert "Traceback" not in caplog.text
+    assert "Exception in callback" not in caplog.text
 
 
 async def test_switch_retires_the_old_model(tmp_path: Path) -> None:
