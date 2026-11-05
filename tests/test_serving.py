@@ -21,6 +21,14 @@ async def test_starts_on_first_request_and_relays(tmp_path: Path) -> None:
         assert [m["id"] for m in listed] == ["chat-a", "embed-a"]
         # Nothing starts before its first request.
         assert not listed[0]["melo"]["loaded"]
+        assert [m["vision"] for m in listed] == [True, False]
+        status = (await front.get("/v1/models/status")).json()["models"]
+        assert [
+            (m["id"], m["model_alias"], m["model_type"], m["loaded"]) for m in status
+        ] == [
+            ("chat-a", "a", "vlm", False),
+            ("embed-a", "embed-a", "embedding", False),
+        ]
 
         reply = await front.post(
             "/v1/chat/completions", json={"model": " a ", "messages": []}
@@ -56,6 +64,7 @@ async def test_starts_on_first_request_and_relays(tmp_path: Path) -> None:
             state["roles"]["chat"]["status"] == "ready"
             and state["roles"]["embedding"]["dims"] == 8
         )
+        assert state["roles"]["chat"]["backend_name"] == "Splash"
 
 
 async def test_switch_retires_the_old_model(tmp_path: Path) -> None:
@@ -90,6 +99,12 @@ async def test_refused_or_failed_switches_keep_the_model(tmp_path: Path) -> None
         assert failed.value.kind == "start_failed" and "exited with code 3" in str(
             failed.value
         )
+        with pytest.raises(ControlError) as wrong_type:
+            await asyncio.to_thread(client.switch, "b", force="false")
+        assert wrong_type.value.kind == "bad_request"
+        with pytest.raises(ControlError) as not_finite:
+            await asyncio.to_thread(client.switch, "b", drain_s=float("nan"))
+        assert not_finite.value.kind == "bad_request"
 
         chat = (await asyncio.to_thread(client.state))["roles"]["chat"]
         assert (chat["pick"], chat["status"], engine.generation) == (

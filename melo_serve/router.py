@@ -5,7 +5,8 @@ chat role, as the router it replaces did. No other path reaches a backend, so a
 backend's own management API (oMLX's ``/admin``) stays closed. Bodies and replies
 pass through unchanged, streamed, except that a request's ``model`` is set to the
 role's served name (an alias or stray spaces still reach the right model) and the
-backend's key is added. ``/v1/models`` lists only what is served.
+backend's key is added. ``/v1/models`` and ``/v1/models/status`` list only what is
+served, and say which model reads pictures.
 
 aiohttp both serves and relays: in front of one fake backend a minimal aiohttp
 proxy costs 0.31 ms of CPU per request, as much as a plain threaded proxy, where
@@ -15,7 +16,7 @@ Starlette, uvicorn and httpx cost 0.84 ms.
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
 
 import aiohttp
@@ -23,6 +24,7 @@ from aiohttp import web
 from yarl import URL
 
 from melo_serve import __version__
+from melo_serve.catalog import Pick
 from melo_serve.engine import Engine, EngineError
 
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
@@ -152,6 +154,12 @@ async def _relay(
     return reply
 
 
+def listed(engine: Engine) -> Iterator[tuple[str, Pick, bool, bool]]:
+    """What is served: the role, the pick, whether it is loaded, whether it sees."""
+    for slot, pick in engine.served():
+        yield slot.role, pick, slot.loaded and slot.ready(), "vision" in pick.caps
+
+
 def build(engine: Engine) -> web.Application:
     async def health(request: web.Request) -> web.StreamResponse:
         return web.json_response(
@@ -170,16 +178,34 @@ def build(engine: Engine) -> web.Application:
                 "object": "model",
                 "created": 0,
                 "owned_by": "melo_serve",
+                "vision": vision,
                 "melo": {
-                    "role": slot.role,
+                    "role": role,
                     "backend": pick.backend,
                     "generation": engine.generation,
-                    "loaded": slot.loaded and slot.ready(),
+                    "loaded": loaded,
                 },
             }
-            for slot, pick in engine.served()
+            for role, pick, loaded, vision in listed(engine)
         ]
         return web.json_response({"object": "list", "data": data})
+
+    async def status(request: web.Request) -> web.StreamResponse:
+        """oMLX's model status: what localmelo reads to find the loaded models."""
+        entries = [
+            {
+                "id": pick.served_name,
+                "model_alias": pick.short,
+                "model_type": (
+                    "embedding" if role == "embedding" else "vlm" if vision else "llm"
+                ),
+                "loaded": loaded,
+                "engine": pick.backend,
+                "source": pick.source,
+            }
+            for role, pick, loaded, vision in listed(engine)
+        ]
+        return web.json_response({"models": entries})
 
     async def state(request: web.Request) -> web.StreamResponse:
         return web.json_response(engine.state())
@@ -199,6 +225,7 @@ def build(engine: Engine) -> web.Application:
     app.router.add_get("/health", health)
     app.router.add_get("/v1/models", models)
     app.router.add_route("*", "/v1/models", managed)
+    app.router.add_get("/v1/models/status", status)  # before the /v1/models/ prefix
     app.router.add_get("/melo/v1/state", state)
     app.router.add_post("/v1/embeddings", embeddings)
     for prefix in ("/v1/models/", "/v1/memory/"):

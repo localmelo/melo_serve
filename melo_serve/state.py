@@ -1,8 +1,8 @@
 """``state.json``: what melo_serve serves, for clients that read a file.
 
 It is replaced whole on every change (written beside it, then renamed), so a
-reader never sees half a file. It never holds a key. ``schema/state.v1.json``
-in the repository describes it.
+reader never sees half a file. It never holds a key. The README's "For client
+authors" section describes it.
 """
 
 from __future__ import annotations

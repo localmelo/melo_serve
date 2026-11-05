@@ -67,6 +67,7 @@ def fake_catalog(tmp_path: Path, record: Path) -> Catalog:
         {
             "id": "chat-a",
             "aliases": ["a"],
+            "caps": ["vision"],
             "env": {**env, "FAKE_CHUNKS": "8", "FAKE_CHUNK_S": "0.15"},
         },
         {"id": "chat-b", "aliases": ["b"], "env": env},
