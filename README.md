@@ -40,7 +40,7 @@ Then point any OpenAI-compatible client at `http://127.0.0.1:8321/v1`.
 | `up [pick] [-f] [-p port]` | start melo_serve; `-f` stays in the foreground |
 | `stop` | stop the models and melo_serve |
 | `doctor` | backends, the login item and memory |
-| `install`, `uninstall` | add or remove the login item |
+| `install`, `uninstall` | add or remove the login item; `install` again changes nothing (`already installed, skipped`) unless its settings changed, such as `PATH` or `HF_HOME`, and then restarts melo_serve |
 
 `-X key=value` changes a setting for one command, for example `-X port=8322`.
 

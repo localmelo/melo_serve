@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import plistlib
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from melo_serve import catalog, fit, launchd, settings
+from melo_serve import catalog, cli, fit, launchd, settings
 from melo_serve.adapters import OmlxAdapter, SplashAdapter
 from melo_serve.catalog import pick_from_dict
 
@@ -144,3 +145,39 @@ def test_login_service_plist() -> None:
     )
     assert plist["ProgramArguments"] == ["/x/melo-serve", "up", "-f"]
     assert plist["EnvironmentVariables"][launchd.ENV] == "1"
+
+
+def test_install_is_safe_to_run_again(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[str] = []
+    loaded = False
+
+    def launchctl(*args: str) -> subprocess.CompletedProcess[str]:
+        nonlocal loaded
+        calls.append(args[0])
+        if args[0] == "bootstrap":
+            loaded = True
+        elif args[0] == "bootout":
+            loaded = False
+        return subprocess.CompletedProcess(
+            args, 0 if loaded or args[0] != "print" else 113, "", ""
+        )
+
+    monkeypatch.setattr(launchd, "_launchctl", launchctl)
+    monkeypatch.setattr(  # the daemon is up once launchd has the plist
+        cli.Client, "running", lambda self: launchd.plist_path().exists()
+    )
+
+    def install() -> list[str]:
+        calls.clear()
+        assert cli.main(["install"]) == 0
+        return capsys.readouterr().out.splitlines()
+
+    assert install() == ["installed ai.localmelo.melo_serve (starts at login)"]
+    assert install() == ["already installed, skipped"]
+    assert "bootout" not in calls and "bootstrap" not in calls
+    monkeypatch.setenv("HF_HOME", "/elsewhere/hf")
+    [line] = install()
+    assert line.startswith("updated") and "restarted" in line
+    assert "/elsewhere/hf" in launchd.plist_path().read_text()
