@@ -19,6 +19,7 @@ from melo_serve.catalog import Pick
 from melo_serve.settings import Settings
 
 APP_CLI = "/Applications/oMLX.app/Contents/MacOS/omlx-cli"
+USER_APP_CLI = "~/Applications/oMLX.app/Contents/MacOS/omlx-cli"  # where get puts it
 VERSION = "0.7.3"
 DMG_BASE = f"https://github.com/jundot/omlx/releases/download/v{VERSION}/"
 DMGS = (  # (first macOS major it is for, file, bytes, sha256); one DMG per macOS line
@@ -90,8 +91,10 @@ class OmlxAdapter(Adapter):
         configured = settings.backend(self.key).command
         if configured:
             return configured
-        if shutil.which("omlx") is None and os.path.exists(APP_CLI):
-            return (APP_CLI,)
+        if shutil.which("omlx") is None:
+            for cli in (APP_CLI, os.path.expanduser(USER_APP_CLI)):
+                if os.path.exists(cli):
+                    return (cli,)
         return self.default_command
 
     def install_plan(self, macos: tuple[int, ...]) -> InstallPlan | None:

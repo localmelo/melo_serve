@@ -30,8 +30,9 @@ class SplashAdapter(Adapter):
         if macos < (26, 4):
             return None
         return InstallPlan(
-            "homebrew", "1.5.0", 264_000_000, "/opt/homebrew", needs_homebrew=True
-        )
+            "homebrew", "1.5.0", 264_000_000, "/opt/homebrew",
+            needs_homebrew=True, formula="incoai/tap/splash",
+        )  # fmt: skip
 
     def release_path(self, pick: Pick) -> str:
         return "/v1/memory/release"

@@ -7,6 +7,7 @@ list before it asks the person for one OK; the terminal prints a short summary.
 
 from __future__ import annotations
 
+import os
 import platform
 import re
 import shutil
@@ -49,6 +50,18 @@ def _run(*argv: str) -> str:
     return out.stdout.strip()
 
 
+def find_brew() -> str | None:
+    """Homebrew's ``brew``: on PATH, else at its Apple silicon place; None without it."""
+    found = shutil.which("brew")
+    if found:
+        return found
+    return BREW if os.access(BREW, os.X_OK) else None
+
+
+def macos_version() -> str:
+    return _run("sw_vers", "-productVersion")
+
+
 def probe_machine(settings: Settings) -> Machine:
     ram = fit.total_ram_bytes()
     hf_home = settings.resolved_hf_home()
@@ -56,16 +69,16 @@ def probe_machine(settings: Settings) -> Machine:
         chip=_run("sysctl", "-n", "machdep.cpu.brand_string") or "unknown",
         arch=platform.machine(),
         ram_gb=round(ram / GIB) if ram else None,
-        macos=_run("sw_vers", "-productVersion"),
+        macos=macos_version(),
         macos_build=_run("sw_vers", "-buildVersion"),
         free_gb=round(fit.free_bytes(Path(hf_home) / "hub") / GIB, 1),
         hf_home=paths.tilde(hf_home),
         hf_home_from=settings.hf_home_source(),
-        homebrew=bool(shutil.which("brew")) or Path(BREW).exists(),
+        homebrew=find_brew() is not None,
     )
 
 
-def _version(text: str) -> tuple[int, ...]:
+def version_tuple(text: str) -> tuple[int, ...]:
     return tuple(int(part) for part in re.findall(r"\d+", text)) or (0,)
 
 
@@ -78,13 +91,20 @@ def _item(
     }  # fmt: skip
 
 
+def _found_at(path: str) -> str:
+    """Where a backend is: its app when the command lives in one, else the command."""
+    app, sep, _ = path.partition(".app/")
+    return paths.tilde(app + ".app" if sep else path)
+
+
 def _backend_item(
     adapter: Adapter, install: InstallPlan, found: Install
 ) -> dict[str, Any]:
     version = found.version if found.found and found.version else install.version
     item = _item(
         "backend", adapter.key, f"{adapter.name} {version}", install.via,
-        install.size_bytes, install.dest, "done" if found.found else "todo",
+        install.size_bytes, _found_at(found.path) if found.found else install.dest,
+        "done" if found.found else "todo",
     )  # fmt: skip
     if install.sha256:
         item.update(sha256=install.sha256, file=install.file)
@@ -111,7 +131,7 @@ def _refusal(
     machine: Machine, catalog: Catalog, adapters: Mapping[str, Adapter]
 ) -> str:
     """Why this Mac cannot run melo_serve at all; "" when it can."""
-    macos = _version(machine.macos)
+    macos = version_tuple(machine.macos)
     if machine.arch != "arm64":
         return f"This Mac has an Intel chip ({machine.arch}); melo_serve needs Apple silicon."
     if not any(a.install_plan(macos) for a in adapters.values()):
@@ -142,7 +162,7 @@ def build(
     plan["reason"] = _refusal(machine, catalog, adapters)
     if plan["reason"]:
         return plan
-    macos = _version(machine.macos)
+    macos = version_tuple(machine.macos)
     installs = {key: adapter.detect(settings) for key, adapter in adapters.items()}
     plans = {k: p for k, a in adapters.items() if (p := a.install_plan(macos))}
     limits = {"floor_pct": settings.floor_pct, "min_pct": settings.min_pct}

@@ -122,7 +122,7 @@ A request that finds its model unloaded starts it, and can fail with the load er
 ```json
 {
   "schema": "melo_serve.state/1",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "generation": 3,
   "status": "ready",
   "updated_at": "2026-11-05T02:30:37-05:00",

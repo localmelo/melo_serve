@@ -77,7 +77,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     plan.add_argument("--json", action="store_true", help="the plan as JSON")
     get = sub.add_parser(
-        "get", help="download the models of some picks into the Hugging Face cache"
+        "get", help="install the backends of some picks and download their models"
     )
     get.add_argument("picks", nargs="+", metavar="pick")
     get.add_argument("--json", action="store_true", help="progress as JSON lines")
@@ -86,6 +86,10 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="keep the models under PATH/hub, and remember it",
     )
+    get.add_argument(
+        "--skip", action="append", default=[], metavar="ITEM",
+        help="leave out an item of this run, e.g. backend:omlx or model:<pick> (repeatable)",
+    )  # fmt: skip
     sub.add_parser("doctor", help="check the backends, the login item and memory")
     sub.add_parser("install", help="start melo_serve at login")
     sub.add_parser("uninstall", help="remove the login item")

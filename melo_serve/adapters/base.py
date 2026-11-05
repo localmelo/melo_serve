@@ -54,6 +54,7 @@ class InstallPlan:
     url: str = ""  # a DMG's download address
     file: str = ""  # a DMG's name
     sha256: str = ""  # a DMG's pinned checksum
+    formula: str = ""  # a Homebrew formula
 
 
 class Adapter(abc.ABC):
