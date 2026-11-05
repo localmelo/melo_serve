@@ -173,9 +173,9 @@ def build(
     no_brew: list[Pick] = []  # fit this Mac's memory, and lack only Homebrew
 
     def gettable(pick: Pick) -> bool:
-        """``get`` can finish it: it downloads such models, or this one is here."""
+        """``get`` can finish it: it has files to download, or the model is here."""
         adapter = adapters[pick.backend]
-        return adapter.downloads_models or not adapter.installed(pick, settings)
+        return bool(adapter.hub_files(pick)) or not adapter.installed(pick, settings)
 
     def runs_here(pick: Pick) -> bool:
         install = plans.get(pick.backend)

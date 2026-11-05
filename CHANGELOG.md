@@ -26,8 +26,7 @@ melo_serve has no release yet.
   described in the README for client authors. (#10)
 
 - `melo-serve get <pick…> [--json] [--hf-home PATH]` downloads the models of some picks into the Hugging Face cache
-  (`<hf_home>/hub`, never a project folder; `HF_HOME` is respected). oMLX models are downloaded; a Splash model comes in a
-  later version, and `get` says so. A model already there is skipped, so every run is safe to repeat. It checks the
+  (`<hf_home>/hub`, never a project folder; `HF_HOME` is respected). A model already there is skipped, so every run is safe to repeat. It checks the
   exact size with Hugging Face and refuses, downloading nothing, when the cache's volume would have less than 5 GiB left.
   It saves `hf_home` in `config.toml` when the file has none (or sets it from `--hf-home`), keeping the rest of the
   file. One `get` runs at a time (a second says `another download is running (pid N)` and exits 75), and Ctrl-C or
@@ -40,12 +39,19 @@ melo_serve has no release yet.
   `~/Applications` (size and sha256 checked, the copy verified with `codesign`, no `sudo`, no password); Splash comes
   from `brew install incoai/tap/splash`, and Homebrew must already be there. A backend already installed, at any
   version, is left alone. A stopped DMG download continues from where it stopped. The free-space check also counts the
-  DMG and the app on the home volume, and the JSON has a new `item`, `backend:<key>`. A Splash pick whose model is
-  not on this Mac is still refused unless `model:<id>` is skipped, so `plan` recommends such a pick only when its model is
-  there, and each model item of the plan names its `backend`. (#14)
+  DMG and the app on the home volume, and the JSON has a new `item`, `backend:<key>`. Each model item of the
+  plan names its `backend`. (#14)
 
 - `melo-serve plan --pick PICK` plans another chat pick, so a client can show the true sizes and backends of an
   alternative before anyone says yes. (#16)
+
+- `melo-serve get` now downloads the models of Splash picks too, and `plan` no longer holds a Splash pick back until its
+  model is there. A pick lists what to download in `picks.toml` (`[[pick.hub]]` tables with a `repo` and, optionally,
+  `files` patterns; no `files` means every file), so the other quantizations in a repo are not downloaded. The built-in
+  Splash picks list their model, multimodal projector and DFlash2 draft. The first load of a Splash model prepares it
+  from the Hugging Face cache with links and no second copy, and the model counts as downloaded when all its listed files
+  are in the cache. A Splash pick in your own `picks.toml` without `[[pick.hub]]` is not downloaded by `get`, and is
+  refused unless its model is in Splash's models folder. The version is 0.4.0. (#18)
 
 ### Changed
 

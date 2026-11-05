@@ -7,6 +7,9 @@
 #              Mac with measured_ram_gb of memory; without it the fit check
 #              estimates from disk_gb.
 # load_s, decode_tps: measured on that Mac (decode: a short prompt).
+# [[pick.hub]]  what `melo-serve get` downloads for a Splash pick, which finds its
+#              files in the Hugging Face cache: a repo, and the files of it that are
+#              needed (patterns such as "IQ3_XXS/*"; none means every file).
 
 [[pick]]
 id = "qwen3.8-27b-splash"
@@ -25,6 +28,13 @@ decode_tps = 78.2
 caps = ["tools", "vision", "reasoning"]
 min_ram_gb = 48
 
+[[pick.hub]]
+repo = "unsloth/Qwen3.8-27B-GGUF"
+files = ["Qwen3.8-27B-UD-Q4_K_M.gguf", "mmproj-BF16.gguf"]
+
+[[pick.hub]]
+repo = "incoai/Qwen3.8-27B-DFlash2"
+
 [[pick]]
 id = "qwen3.8-flash-next-splash"
 aliases = ["flash-next", "fn"]
@@ -40,6 +50,13 @@ measured_ram_gb = 128
 decode_tps = 134.7
 caps = ["tools", "vision", "reasoning"]
 min_ram_gb = 96
+
+[[pick.hub]]
+repo = "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF"
+files = ["IQ3_XXS/*", "mmproj-Qwen3.8-Flash-Next-BF16.gguf"]
+
+[[pick.hub]]
+repo = "incoai/Qwen3.8-Flash-Next-DFlash2"
 
 [[pick]]
 id = "qwen3-8b-omlx"

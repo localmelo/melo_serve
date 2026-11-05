@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -36,7 +37,7 @@ def make_plan(
     prep: Callable[[Path], None] | None,
     free_pct: float = 80.0,
     omlx_command: str = "bin/omlx",
-    splash_downloads: bool = True,  # the order of the picks is what most tests check
+    no_hub: bool = False,  # picks whose files `get` cannot download
     chosen: str = "",
 ) -> dict[str, Any]:
     """The plan for *machine*; the backends and the cache live in *tmp*."""
@@ -55,8 +56,9 @@ def make_plan(
     )  # fmt: skip
     memory = fit.Memory(total_bytes=(machine.ram_gb or 0) * GIB, free_pct=free_pct)
     picks = catalog.load(tmp / "none.toml")
+    if no_hub:
+        picks = catalog.Catalog(dataclasses.replace(p, hub=()) for p in picks.all())
     adapters = default_adapters()
-    adapters["splash"].downloads_models = splash_downloads
     return plan.build(machine, memory, picks, adapters, config, chosen)
 
 
@@ -187,7 +189,7 @@ def test_a_backend_already_there_shows_where_it_was_found(
 def test_a_pick_get_cannot_finish_is_recommended_only_when_its_model_is_here(
     tmp_path: Path,
 ) -> None:
-    result = make_plan(tmp_path / "a", mac(), None, splash_downloads=False)
+    result = make_plan(tmp_path / "a", mac(), None, no_hub=True)
     assert result["pick"]["id"] == "qwen3-8b-omlx"
     assert {a["backend"] for a in result["alternatives"]} == {"omlx"}
     models = [i for i in result["items"] if i["kind"] == "model"]
@@ -197,7 +199,7 @@ def test_a_pick_get_cannot_finish_is_recommended_only_when_its_model_is_here(
         source = "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_M"
         (root / "splash" / source).mkdir(parents=True)
 
-    result = make_plan(tmp_path / "b", mac(), has_the_model, splash_downloads=False)
+    result = make_plan(tmp_path / "b", mac(), has_the_model, no_hub=True)
     assert result["pick"]["id"] == "qwen3.8-27b-splash"
 
 

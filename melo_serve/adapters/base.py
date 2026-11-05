@@ -9,6 +9,7 @@ so tests check it as is.
 from __future__ import annotations
 
 import abc
+import contextlib
 import os
 import re
 import shutil
@@ -18,10 +19,53 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from melo_serve.catalog import Pick
+from melo_serve.catalog import HubRepo, Pick
 from melo_serve.settings import Settings
 
 _VERSION_RE = re.compile(r"(\d+\.\d+(?:\.\d+)?[\w.+-]*)")
+
+
+def hf_store(repo: str, hf_home: str) -> Path:
+    return Path(hf_home) / "hub" / ("models--" + repo.replace("/", "--"))
+
+
+def hf_snapshot(repo: str, hf_home: str) -> Path | None:
+    """The local snapshot of a Hugging Face repo, found without the network."""
+    store = hf_store(repo, hf_home)
+    try:
+        revision = (store / "refs" / "main").read_text(encoding="utf-8").strip()
+    except OSError:
+        revision = ""
+    if revision and (store / "snapshots" / revision).is_dir():
+        return store / "snapshots" / revision
+    snapshots = sorted((store / "snapshots").glob("*")) if store.is_dir() else []
+    return snapshots[-1] if snapshots else None
+
+
+def snapshot_files(repo: HubRepo, hf_home: str) -> dict[str, Path] | None:
+    """The files of *repo*'s local snapshot that its pick needs, by name in the repo
+    (``IQ3_XXS/x.gguf``); None without a snapshot. A link to a missing blob is listed."""
+    snapshot = hf_snapshot(repo.repo, hf_home)
+    if snapshot is None:
+        return None
+    found = {p.relative_to(snapshot).as_posix(): p for p in snapshot.rglob("*")}
+    return {n: p for n, p in found.items() if repo.matches(n) and not p.is_dir()}
+
+
+def _repo_bytes(repo: HubRepo, hf_home: str, include_partial: bool) -> int:
+    total = 0
+    if repo.files:  # the repo may hold other files that are not this pick's
+        for path in (snapshot_files(repo, hf_home) or {}).values():
+            with contextlib.suppress(OSError):  # a link to a missing blob
+                total += path.stat().st_size
+    try:
+        for blob in (hf_store(repo.repo, hf_home) / "blobs").iterdir():
+            partial = blob.suffix == ".incomplete"
+            if blob.is_file() and (include_partial if partial else not repo.files):
+                total += blob.stat().st_size
+    except OSError:
+        pass
+    return total
 
 
 @dataclass(frozen=True)
@@ -63,7 +107,6 @@ class Adapter(abc.ABC):
     name = ""
     default_command: tuple[str, ...] = ()
     known_paths: tuple[str, ...] = ()  # where it lives when PATH does not reach it
-    downloads_models = False  # ``melo-serve get`` can download this backend's models
     install_hint = ""
     tested_versions: tuple[str, ...] = ()
     ready_path = "/health"  # answers 200 once requests are served
@@ -118,13 +161,20 @@ class Adapter(abc.ABC):
         Both backends need Apple silicon, which ``melo-serve plan`` checks once.
         """
 
+    def hub_files(self, pick: Pick) -> tuple[HubRepo, ...]:
+        """What ``melo-serve get`` downloads for *pick*: none for a model it cannot fetch."""
+        return pick.hub
+
     def cached_bytes(
         self, pick: Pick, settings: Settings, include_partial: bool = False
     ) -> int:
-        """Bytes of *pick*'s model already downloaded; 0 if unknown.
+        """Bytes of *pick*'s files already in the cache; 0 if unknown.
 
-        Finished files only, unless *include_partial*: a file still downloading."""
-        return 0
+        Of a repo with a file list, only the files that are in it; else every finished
+        blob. Finished files only, unless *include_partial*: a file still downloading
+        (the hub never reuses a cut-short ``.incomplete``)."""
+        home = settings.resolved_hf_home()
+        return sum(_repo_bytes(r, home, include_partial) for r in self.hub_files(pick))
 
     def auth(self, key: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {key}"} if key else {}
