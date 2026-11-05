@@ -31,7 +31,10 @@ def mac(**changes: Any) -> plan.Machine:
 
 
 def make_plan(
-    tmp: Path, machine: plan.Machine, prep: Callable[[Path], None] | None
+    tmp: Path,
+    machine: plan.Machine,
+    prep: Callable[[Path], None] | None,
+    free_pct: float = 80.0,
 ) -> dict[str, Any]:
     """The plan for *machine*; the backends and the cache live in *tmp*."""
     hf = tmp / "hf"
@@ -47,7 +50,7 @@ def make_plan(
             },
         }
     )  # fmt: skip
-    memory = fit.Memory(total_bytes=(machine.ram_gb or 0) * GIB, free_pct=80.0)
+    memory = fit.Memory(total_bytes=(machine.ram_gb or 0) * GIB, free_pct=free_pct)
     picks = catalog.load(tmp / "none.toml")
     return plan.build(machine, memory, picks, default_adapters(), config)
 
@@ -74,8 +77,10 @@ CASES: list[dict[str, Any]] = [
     {"id": "48 GB: Splash and oMLX", "mac": {"ram_gb": 48}, "pick": "qwen3.8-27b-splash",
      "states": {"backend:splash": "todo", "backend:omlx": "todo",
                 "model:qwen3.8-27b-splash": "todo", EMBED: "todo"}},
-    {"id": "128 GB: the 105 GB model is too big for the free memory", "mac": {},
-     "pick": "qwen3.8-27b-splash", "alternatives": ["qwen3-8b-omlx", "qwen3-4b-omlx"]},
+    {"id": "128 GB: every model fits the Mac", "mac": {}, "pick": "qwen3.8-27b-splash",
+     "fit": "fits", "alternatives": ["qwen3.8-flash-next-splash", "qwen3-8b-omlx", "qwen3-4b-omlx"]},
+    {"id": "128 GB with little free memory: the same pick, another verdict", "mac": {},
+     "free_pct": 10.0, "pick": "qwen3.8-27b-splash", "fit": "too_big"},
     {"id": "macOS 15: no Splash, the 15 DMG", "mac": {"ram_gb": 48, "macos": "15.6"},
      "pick": "qwen3-8b-omlx", "file": "oMLX-0.7.3-macos15-sequoia.dmg", "hint": ""},
     {"id": "macOS 26.3 is too old for Splash", "mac": {"macos": "26.3"},
@@ -96,9 +101,13 @@ CASES: list[dict[str, Any]] = [
 
 @pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])
 def test_plan_for_a_fake_mac(tmp_path: Path, case: dict[str, Any]) -> None:
-    result = make_plan(tmp_path, mac(**case["mac"]), case.get("prep"))
+    result = make_plan(
+        tmp_path, mac(**case["mac"]), case.get("prep"), case.get("free_pct", 80.0)
+    )
     assert (result["pick"] or {}).get("id") == case["pick"]
     assert result["supported"] is (case["pick"] is not None)
+    if "fit" in case:
+        assert result["pick"]["fit"] == case["fit"]
     assert case.get("reason", "") in result["reason"]
     assert bool(result["reason"]) is (case["pick"] is None)
     if "hint" in case:

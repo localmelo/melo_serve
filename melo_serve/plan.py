@@ -161,13 +161,11 @@ def build(
     installs = {key: adapter.detect(settings) for key, adapter in adapters.items()}
     plans = {k: p for k, a in adapters.items() if (p := a.install_plan(macos))}
     limits = {"floor_pct": settings.floor_pct, "min_pct": settings.min_pct}
-    no_brew: list[Pick] = []  # fit this Mac, and lack only Homebrew
+    no_brew: list[Pick] = []  # fit this Mac's memory, and lack only Homebrew
 
     def runs_here(pick: Pick) -> bool:
         install = plans.get(pick.backend)
         if install is None or (pick.min_ram_gb or 0) > (machine.ram_gb or 0):
-            return False
-        if not fit.check(pick, memory, **limits).loadable:
             return False
         if (
             install.needs_homebrew
@@ -185,10 +183,10 @@ def build(
         if names:
             plan["reason_hint"] = f"Installing Homebrew would allow {names}."
     if not chats:
-        plan["reason"] = "No model fits this Mac right now."
+        plan["reason"] = "No model fits this Mac."
         return plan
     chat = chats[0]
-    verdict = fit.check(chat, memory, **limits)
+    verdict = fit.check(chat, memory, **limits)  # this moment's, for information
     picks = [chat, *embedders[:1]]
     keys = list(dict.fromkeys(p.backend for p in picks))
     items = [_backend_item(adapters[k], plans[k], installs[k]) for k in keys]
@@ -213,6 +211,15 @@ def build(
     return plan
 
 
+FIT_WORDS = {
+    fit.FITS: "fits",
+    fit.ESTIMATE: "likely fits",
+    fit.ALONE: "fits alone; close other models before the first load",
+    fit.TOO_BIG: "too big while other models run; it fits this Mac",
+    fit.UNKNOWN: "fit unknown",
+}
+
+
 def _size(count: int) -> str:
     return f"{count / GIB:.1f} GB" if count >= GIB else f"{count / 1e6:.0f} MB"
 
@@ -228,7 +235,7 @@ def render(plan: Mapping[str, Any], backend_names: Mapping[str, str]) -> str:
     if plan["pick"]:
         pick = plan["pick"]
         backend = backend_names.get(pick["backend"], pick["backend"])
-        verdict = pick["fit"].replace("_", " ")
+        verdict = FIT_WORDS.get(pick["fit"], pick["fit"])
         lines.append(f"Recommended: {pick['name']} on {backend} ({verdict})")
     else:
         lines.append(f"melo_serve cannot serve a model here: {plan['reason']}")
