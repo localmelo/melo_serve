@@ -40,6 +40,7 @@ Then point any OpenAI-compatible client at `http://127.0.0.1:8321/v1`.
 | `up [pick] [-f] [-p port]` | start melo_serve; `-f` stays in the foreground |
 | `stop` | stop the models and melo_serve |
 | `plan [--json]` | what a first run would install here and how big it is; reads only |
+| `get <pick…> [--json] [--hf-home PATH]` | download the models of those picks into the Hugging Face cache (oMLX models; Splash models come later); a model already there is skipped |
 | `doctor` | backends, the login item and memory |
 | `install`, `uninstall` | add or remove the login item; `install` again changes nothing (`already installed, skipped`) unless its settings changed, such as `PATH` or `HF_HOME`, and then restarts melo_serve |
 
@@ -121,7 +122,7 @@ A request that finds its model unloaded starts it, and can fail with the load er
 ```json
 {
   "schema": "melo_serve.state/1",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "generation": 3,
   "status": "ready",
   "updated_at": "2026-11-05T02:30:37-05:00",
@@ -175,6 +176,22 @@ The values are illustrative. A role is `null` when no pick is chosen. The top-le
 - `pick` is the first chat pick, in `picks.toml` order, that fits the Mac's memory (`min_ram_gb`) and whose backend can run on this macOS (Splash needs macOS 26.4 or later and Homebrew; oMLX needs macOS 15, or 26 and later). It goes by the Mac, not by how much memory is free at this moment, so a busy Mac is not sent a smaller model for good. `pick.fit` is this moment's verdict from the fit check (`fits`, `estimate`, `alone`, `too_big` or `unknown`), for information only: the load step checks again. `alternatives` are the other chat picks that pass the same rules.
 - `items` are the pick's backend, the embedding model's backend (when it differs), the chat model and the embedding model, each with a `state` of `done`, `partial` (`cached_bytes` is what is already in the cache) or `todo`. `size_bytes` of a model is the catalog's `disk_gb`.
 - `download_bytes` adds up the items not `done`, less `cached_bytes`. `enough_disk` is `free_gb` of the cache's volume at least that plus 5 GiB.
+
+### Get
+
+`melo-serve get <pick…> --json` downloads the models of those picks (an id, alias or served name from `melo-serve list -a`) and prints one JSON object per line. Without `--json` it prints a progress line and the same closing lines as text. Files go into `<hf_home>/hub`, the Hugging Face cache, and nowhere else; `HF_HOME` is honoured, and `--hf-home PATH` picks another folder. Run it again after any stop or failure: finished files are kept, so it carries on, and a model that is complete is skipped.
+
+```json
+{"item": "config:hf_home", "state": "done", "line": "saved hf_home = ~/models/huggingface in ~/.cache/melo_serve/config.toml"}
+{"item": "model:qwen3-8b-omlx", "state": "running", "done_bytes": 310000000, "total_bytes": 4600000000, "line": "downloading Qwen3 8B"}
+{"item": "model:qwen3-8b-omlx", "state": "done", "done_bytes": 4600000000, "total_bytes": 4600000000, "line": "downloaded Qwen3 8B into ~/models/huggingface"}
+```
+
+- `item` is `model:<pick id>`, or `config:hf_home`, `disk`, `cache:hf_home` and `get` for what is not one model. `state` is `running`, `done`, `skipped` or `failed`; `done_bytes` and `total_bytes` come with a model's `running` and `done` events. `line` is the sentence to show, and it is the same text a terminal gets.
+- The closing lines are a closed set: `downloaded <name> into <path>`, `already downloaded, skipped`, and `failed: <reason>; nothing was changed`. When a failure leaves finished files in the cache, the end of the line says so and says to run the same command again. A stop ends with `Stopped at 1.0 / 4.6 GB. Run the same command again to continue.` (state `failed`, exit code 130).
+- Exit codes: `0` done, `1` failed, `2` cannot start (an unknown pick, a Splash model not downloaded yet, `HF_HUB_CACHE` set to somewhere other than `<hf_home>/hub`, or less free space than the download plus 5 GiB on the cache's volume; nothing is written), `75` another `get` is running (`another download is running (pid N)`), `130` stopped by SIGINT or SIGTERM.
+- When `config.toml` has no `hf_home`, `get` saves the folder it used there, since the login item has no shell environment; the other lines of the file stay as they are. `--hf-home PATH` saves that folder instead.
+- The size check asks Hugging Face for the exact size, before the first byte, so `get` needs the network, and nothing else here does. Only one `get` runs at a time (`get.lock` in melo_serve's folder).
 
 ### Control socket
 
