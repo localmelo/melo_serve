@@ -85,6 +85,9 @@ async def _body(request: web.Request) -> bytes:
 
 
 async def proxy(engine: Engine, request: web.Request, role: str) -> web.StreamResponse:
+    # The relay sends the raw path, so a backend could resolve /v1/../admin to /admin.
+    if {".", ".."} & set(request.path.split("/")):
+        raise EngineError(404, "not_here", "melo_serve manages models: use melo-serve")
     body = await _body(request)
     payload: Any = None
     if body[:1] == b"{" or "json" in request.content_type:
@@ -221,6 +224,7 @@ def build(engine: Engine) -> web.Application:
     )
     app.router.add_get("/health", health)
     app.router.add_get("/v1/models", models)
+    app.router.add_route("*", "/v1/models", managed)
     app.router.add_get("/v1/models/status", status)  # before the /v1/models/ prefix
     app.router.add_get("/melo/v1/state", state)
     app.router.add_post("/v1/embeddings", embeddings)

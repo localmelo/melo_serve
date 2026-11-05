@@ -151,8 +151,13 @@ async def test_guard_refuses_other_hosts_and_sites(tmp_path: Path) -> None:
 
 async def test_front_door_refuses_everything_but_the_openai_api(tmp_path: Path) -> None:
     async with running(tmp_path) as (engine, front):
-        for path in ("/admin/api/models", "/melo/x", "/v1/models/a/unload", "/props"):
-            reply = await front.get(path)
+        paths = (
+            "/admin/api/models", "/melo/x", "/v1/models/a/unload", "/props",
+            "/v1/%2e%2e/admin/x", "/v1/%2e/models",
+        )  # fmt: skip
+        replies = [await front.get(path) for path in paths]
+        replies.append(await front.post("/v1/models"))
+        for reply in replies:
             assert reply.status_code == 404
             assert reply.json()["error"]["type"] == "not_here"
 
