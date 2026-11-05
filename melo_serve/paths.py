@@ -48,6 +48,10 @@ def lock_path() -> Path:
     return home() / "daemon.lock"
 
 
+def get_lock_path() -> Path:
+    return home() / "get.lock"
+
+
 def backend_dir(name: str) -> Path:
     """A folder of melo_serve's own for one backend instance (an oMLX base path)."""
     return home() / "backends" / name
@@ -62,3 +66,11 @@ def socket_path() -> Path:
             f"{SOCKET_PATH_MAX} bytes): {path}; set {SOCKET_ENV} to a shorter one"
         )
     return path
+
+
+def tilde(path: str | Path) -> str:
+    """*path* with the home folder written as ``~``, for showing to a person."""
+    text, home_dir = str(path), str(Path.home())
+    if text == home_dir or text.startswith(home_dir + "/"):
+        return "~" + text[len(home_dir) :]
+    return text

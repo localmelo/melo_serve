@@ -108,17 +108,24 @@ class OmlxAdapter(Adapter):
     def release_path(self, pick: Pick) -> str:
         return f"/v1/models/{pick.served_name}/unload"
 
-    def cached_bytes(self, pick: Pick, settings: Settings) -> int:
-        if pick.source.startswith(("/", "~", ".")):
+    def cached_bytes(
+        self, pick: Pick, settings: Settings, include_partial: bool = False
+    ) -> int:
+        """Bytes of finished files; the hub never reuses a cut-short ``.incomplete``."""
+        if pick.is_local:
             return 0
         blobs = hf_store(pick.source, settings.resolved_hf_home()) / "blobs"
         try:
-            return sum(f.stat().st_size for f in blobs.iterdir() if f.is_file())
+            return sum(
+                f.stat().st_size
+                for f in blobs.iterdir()
+                if f.is_file() and (include_partial or f.suffix != ".incomplete")
+            )
         except OSError:
             return 0
 
     def model_path(self, pick: Pick, settings: Settings) -> Path | None:
-        if pick.source.startswith(("/", "~", ".")):
+        if pick.is_local:
             path = Path(pick.source).expanduser()
             return path if path.is_dir() else None
         return hf_snapshot(pick.source, settings.resolved_hf_home())
@@ -126,7 +133,7 @@ class OmlxAdapter(Adapter):
     def installed(self, pick: Pick, settings: Settings) -> str:
         path = self.model_path(pick, settings)
         if path is None:
-            if pick.source.startswith(("/", "~", ".")):
+            if pick.is_local:
                 return f"the folder {pick.source} does not exist"
             return "not downloaded yet (not in the Hugging Face cache)"
         if not (path / "config.json").is_file():

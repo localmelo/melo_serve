@@ -76,6 +76,16 @@ def _parser() -> argparse.ArgumentParser:
         "plan", help="what a first run would set up here, and its size (reads only)"
     )
     plan.add_argument("--json", action="store_true", help="the plan as JSON")
+    get = sub.add_parser(
+        "get", help="download the models of some picks into the Hugging Face cache"
+    )
+    get.add_argument("picks", nargs="+", metavar="pick")
+    get.add_argument("--json", action="store_true", help="progress as JSON lines")
+    get.add_argument(
+        "--hf-home",
+        metavar="PATH",
+        help="keep the models under PATH/hub, and remember it",
+    )
     sub.add_parser("doctor", help="check the backends, the login item and memory")
     sub.add_parser("install", help="start melo_serve at login")
     sub.add_parser("uninstall", help="remove the login item")
@@ -269,6 +279,12 @@ def cmd_plan(args: argparse.Namespace, settings: Settings, overrides: list[str])
     return 0
 
 
+def cmd_get(args: argparse.Namespace, settings: Settings, overrides: list[str]) -> int:
+    from melo_serve import get  # the download code and its dependencies, imported late
+
+    return get.run(args, settings)
+
+
 def cmd_doctor(
     args: argparse.Namespace, settings: Settings, overrides: list[str]
 ) -> int:
@@ -346,6 +362,7 @@ COMMANDS: dict[str, Callable[[argparse.Namespace, Settings, list[str]], int]] = 
     "up": cmd_up,
     "stop": cmd_stop,
     "plan": cmd_plan,
+    "get": cmd_get,
     "doctor": cmd_doctor,
     "install": cmd_install,
     "uninstall": cmd_uninstall,
