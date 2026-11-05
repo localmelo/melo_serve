@@ -21,6 +21,14 @@ async def test_starts_on_first_request_and_relays(tmp_path: Path) -> None:
         assert [m["id"] for m in listed] == ["chat-a", "embed-a"]
         # Nothing starts before its first request.
         assert not listed[0]["melo"]["loaded"]
+        assert [m["vision"] for m in listed] == [True, False]
+        status = (await front.get("/v1/models/status")).json()["models"]
+        assert [
+            (m["id"], m["model_alias"], m["model_type"], m["loaded"]) for m in status
+        ] == [
+            ("chat-a", "a", "vlm", False),
+            ("embed-a", "embed-a", "embedding", False),
+        ]
 
         reply = await front.post(
             "/v1/chat/completions", json={"model": " a ", "messages": []}

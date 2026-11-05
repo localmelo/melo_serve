@@ -16,6 +16,10 @@ melo_serve has no release yet.
   (10 minutes) without requests. A pick that would leave too little free memory is refused, and one that fails to
   start is replaced by the one before. `melo-serve install` starts melo_serve at login.
 
+- `GET /v1/models` says which model reads pictures (`"vision": true` or `false`), and `GET /v1/models/status` lists the
+  served models and whether each is loaded, in oMLX's shape, so a client such as localmelo can turn pictures on for
+  the models that read them. (#4)
+
 ### Changed
 
 - Only the OpenAI API reaches the models through the front door. A path outside `/v1` that is not melo_serve's own

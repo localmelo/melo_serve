@@ -74,6 +74,7 @@ after_stop = "~/bin/after-stop"
 - During a switch, new requests for that model get `503` with `Retry-After`.
 - What is served, and a `generation` that counts the switches, are in `~/.cache/melo_serve/state.json` and at `GET /melo/v1/state`.
 - Only `/v1` paths reach the models (`/v1/embeddings` the embedding model, the rest the chat model); any other path that is not melo_serve's own gets `404` `not_here`, so a backend's admin API stays closed.
+- `GET /v1/models` gives each model a `vision` flag (it reads pictures), and `GET /v1/models/status` lists the served models in oMLX's shape (`id`, `model_alias`, `model_type` `vlm`, `llm` or `embedding`, `loaded`, plus `engine` and `source`).
 - Control (switch, start, stop) goes through a Unix socket that only your user can open: `~/.cache/melo_serve/control.sock`.
 
 ## Development
