@@ -20,4 +20,4 @@ melo_serve has no release yet.
 
 - Only the OpenAI API reaches the models through the front door. A path outside `/v1` that is not melo_serve's own
   (`/health`, `/melo/v1/state`) gets `404` `not_here`, as `/melo/*`, `/v1/models/*` and `/v1/memory/*` did, so
-  a backend's own management API, such as oMLX's `/admin/*`, is no longer open to local clients. (#2)
+  a backend's own management API, such as oMLX's `/admin/*`, is no longer open to local clients. A `/v1` path with `.` or `..` segments is refused too, and so is any method but GET on `/v1/models`. (#2)
