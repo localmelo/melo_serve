@@ -154,14 +154,14 @@ The values are illustrative. A role is `null` when no pick is chosen. The top-le
 {
   "schema": "melo_serve.plan/1",
   "machine": {"chip": "Apple M5 Max", "arch": "arm64", "ram_gb": 128, "macos": "27.2", "macos_build": "26B123",
-              "free_gb": 83.0, "hf_home": "~/Developer/ml_source/huggingface", "hf_home_from": "env", "homebrew": true},
+              "free_gb": 83.0, "hf_home": "~/models/huggingface", "hf_home_from": "env", "homebrew": true},
   "supported": true, "reason": "", "reason_hint": "",
   "pick": {"id": "qwen3.8-27b-splash", "name": "Qwen3.8 27B", "backend": "splash", "fit": "estimate"},
   "items": [
     {"id": "backend:omlx", "kind": "backend", "name": "oMLX 0.7.3", "via": "dmg", "size_bytes": 881239063,
      "dest": "~/Applications/oMLX.app", "state": "todo", "sha256": "2acfde41…", "file": "oMLX-0.7.3-macos26-27.dmg"},
     {"id": "model:qwen3.8-27b-splash", "kind": "model", "name": "Qwen3.8 27B", "via": "huggingface", "size_bytes": 22764000000,
-     "dest": "~/Developer/ml_source/huggingface", "state": "partial", "role": "chat", "cached_bytes": 14100000000}
+     "dest": "~/models/huggingface", "state": "partial", "role": "chat", "cached_bytes": 14100000000}
   ],
   "download_bytes": 9545239063, "enough_disk": true,
   "alternatives": [{"id": "qwen3-8b-omlx", "name": "Qwen3 8B", "backend": "omlx"}]
