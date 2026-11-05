@@ -35,6 +35,14 @@ melo_serve has no release yet.
   clients. melo_serve now depends on `huggingface_hub` (2.4 up to 3, with its transfer layer `hf-xet` and a few more packages), imported only by `get`. The version is 0.2.0, the first
   with `plan` and `get`. (#12)
 
+- `melo-serve get <pick…>` now installs a pick's backend before it downloads the model, and `--skip ITEM`
+  (`backend:<key>` or `model:<id>`, repeatable) leaves an item out. oMLX comes from its pinned DMG into
+  `~/Applications` (size and sha256 checked, the copy verified with `codesign`, no `sudo`, no password); Splash comes
+  from `brew install incoai/tap/splash`, and Homebrew must already be there. A backend already installed, at any
+  version, is left alone. A stopped DMG download continues from where it stopped. The free-space check also counts the
+  DMG and the app on the home volume, and the JSON has a new `item`, `backend:<key>`. A Splash pick whose model is
+  not on this Mac is still refused unless `model:<id>` is skipped. (#14)
+
 ### Changed
 
 - `POST /switch` on the control socket refuses a field of the wrong type with `400` `bad_request` instead of guessing:

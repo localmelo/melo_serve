@@ -35,6 +35,7 @@ def make_plan(
     machine: plan.Machine,
     prep: Callable[[Path], None] | None,
     free_pct: float = 80.0,
+    omlx_command: str = "bin/omlx",
 ) -> dict[str, Any]:
     """The plan for *machine*; the backends and the cache live in *tmp*."""
     hf = tmp / "hf"
@@ -46,7 +47,7 @@ def make_plan(
             "hf_home": str(hf),
             "backends": {
                 "splash": {"command": [str(tmp / "bin/splash")], "models_dir": str(tmp / "splash")},
-                "omlx": {"command": [str(tmp / "bin/omlx")]},
+                "omlx": {"command": [str(tmp / omlx_command)]},
             },
         }
     )  # fmt: skip
@@ -161,3 +162,19 @@ def test_plan_keeps_to_the_published_example(tmp_path: Path) -> None:
             "state",
         } <= item.keys()
     assert types(real["alternatives"][0]) == types(example["alternatives"][0])
+
+
+def test_a_backend_already_there_shows_where_it_was_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "user"))
+    command = "user/Applications/oMLX.app/Contents/MacOS/omlx-cli"
+
+    def app_installed(tmp: Path) -> None:
+        (tmp / command).parent.mkdir(parents=True)
+        (tmp / command).write_text("#!/bin/sh\necho omlx 0.7.3\n")
+        (tmp / command).chmod(0o755)
+
+    result = make_plan(tmp_path, mac(), app_installed, omlx_command=command)
+    omlx = next(i for i in result["items"] if i["id"] == "backend:omlx")
+    assert (omlx["state"], omlx["dest"]) == ("done", "~/Applications/oMLX.app")
