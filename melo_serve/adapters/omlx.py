@@ -14,16 +14,36 @@ import shutil
 import signal
 from pathlib import Path
 
-from melo_serve.adapters.base import Adapter, Launch
+from melo_serve.adapters.base import Adapter, InstallPlan, Launch
 from melo_serve.catalog import Pick
 from melo_serve.settings import Settings
 
 APP_CLI = "/Applications/oMLX.app/Contents/MacOS/omlx-cli"
+VERSION = "0.7.3"
+DMG_BASE = f"https://github.com/jundot/omlx/releases/download/v{VERSION}/"
+DMGS = (  # (first macOS major it is for, file, bytes, sha256); one DMG per macOS line
+    (
+        15,
+        f"oMLX-{VERSION}-macos15-sequoia.dmg",
+        838158761,
+        "cd5e3b454798a002f32ef2f3bf06ae033ea2f4e5b02aa039a2c68445498605f1",
+    ),
+    (
+        26,
+        f"oMLX-{VERSION}-macos26-27.dmg",
+        881239063,
+        "2acfde41aeac0b022dbca803ca109437f3ccaf0c33f3415881526b985bee86f2",
+    ),
+)
+
+
+def hf_store(repo: str, hf_home: str) -> Path:
+    return Path(hf_home) / "hub" / ("models--" + repo.replace("/", "--"))
 
 
 def hf_snapshot(repo: str, hf_home: str) -> Path | None:
     """The local snapshot of a Hugging Face repo, found without the network."""
-    store = Path(hf_home) / "hub" / ("models--" + repo.replace("/", "--"))
+    store = hf_store(repo, hf_home)
     try:
         revision = (store / "refs" / "main").read_text(encoding="utf-8").strip()
     except OSError:
@@ -74,8 +94,28 @@ class OmlxAdapter(Adapter):
             return (APP_CLI,)
         return self.default_command
 
+    def install_plan(self, macos: tuple[int, ...]) -> InstallPlan | None:
+        """The pinned DMG for this macOS: 15, or 26 and later; none for older."""
+        fits = [dmg for dmg in DMGS if dmg[0] <= macos[0]]
+        if not fits:
+            return None
+        _, file, size, sha256 = fits[-1]
+        return InstallPlan(
+            "dmg", VERSION, size, "~/Applications/oMLX.app",
+            url=DMG_BASE + file, file=file, sha256=sha256,
+        )  # fmt: skip
+
     def release_path(self, pick: Pick) -> str:
         return f"/v1/models/{pick.served_name}/unload"
+
+    def cached_bytes(self, pick: Pick, settings: Settings) -> int:
+        if pick.source.startswith(("/", "~", ".")):
+            return 0
+        blobs = hf_store(pick.source, settings.resolved_hf_home()) / "blobs"
+        try:
+            return sum(f.stat().st_size for f in blobs.iterdir() if f.is_file())
+        except OSError:
+            return 0
 
     def model_path(self, pick: Pick, settings: Settings) -> Path | None:
         if pick.source.startswith(("/", "~", ".")):

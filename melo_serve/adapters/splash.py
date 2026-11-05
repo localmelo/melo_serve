@@ -11,7 +11,7 @@ from __future__ import annotations
 import signal
 from pathlib import Path
 
-from melo_serve.adapters.base import Adapter, Launch
+from melo_serve.adapters.base import Adapter, InstallPlan, Launch
 from melo_serve.catalog import Pick
 from melo_serve.settings import Settings
 
@@ -25,6 +25,13 @@ class SplashAdapter(Adapter):
     install_hint = "brew install incoai/tap/splash"
     tested_versions = ("1.5.",)
     ready_path = "/ready"
+
+    def install_plan(self, macos: tuple[int, ...]) -> InstallPlan | None:
+        if macos < (26, 4):
+            return None
+        return InstallPlan(
+            "homebrew", "1.5.0", 264_000_000, "/opt/homebrew", needs_homebrew=True
+        )
 
     def release_path(self, pick: Pick) -> str:
         return "/v1/memory/release"

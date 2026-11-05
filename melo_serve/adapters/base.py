@@ -42,6 +42,20 @@ class Install:
     tested: bool = True
 
 
+@dataclass(frozen=True)
+class InstallPlan:
+    """How to put a backend on a Mac, as data; ``melo-serve plan`` shows it."""
+
+    via: str  # "homebrew" or "dmg"
+    version: str
+    size_bytes: int
+    dest: str
+    needs_homebrew: bool = False
+    url: str = ""  # a DMG's download address
+    file: str = ""  # a DMG's name
+    sha256: str = ""  # a DMG's pinned checksum
+
+
 class Adapter(abc.ABC):
     key = ""
     name = ""
@@ -84,6 +98,17 @@ class Adapter(abc.ABC):
         version = match.group(1) if match else ""
         tested = not self.tested_versions or version.startswith(self.tested_versions)
         return Install(self.key, self.name, True, version, exe, tested=tested)
+
+    @abc.abstractmethod
+    def install_plan(self, macos: tuple[int, ...]) -> InstallPlan | None:
+        """How to install the backend on this macOS; None when it cannot run on it.
+
+        Both backends need Apple silicon, which ``melo-serve plan`` checks once.
+        """
+
+    def cached_bytes(self, pick: Pick, settings: Settings) -> int:
+        """Bytes of *pick*'s model already downloaded, even if cut short; 0 if unknown."""
+        return 0
 
     def auth(self, key: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {key}"} if key else {}

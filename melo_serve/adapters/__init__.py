@@ -1,6 +1,6 @@
 """Backend adapters, by key."""
 
-from melo_serve.adapters.base import Adapter, Install, Launch
+from melo_serve.adapters.base import Adapter, Install, InstallPlan, Launch
 from melo_serve.adapters.omlx import OmlxAdapter
 from melo_serve.adapters.splash import SplashAdapter
 
@@ -12,6 +12,7 @@ def default_adapters() -> dict[str, Adapter]:
 __all__ = [
     "Adapter",
     "Install",
+    "InstallPlan",
     "Launch",
     "OmlxAdapter",
     "SplashAdapter",

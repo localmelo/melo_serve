@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import subprocess
 import sys
 import threading
@@ -13,6 +14,7 @@ from typing import Any
 
 from melo_serve import __version__, fit, launchd, paths
 from melo_serve import catalog as catalog_module
+from melo_serve import plan as plan_module
 from melo_serve import settings as settings_module
 from melo_serve.adapters import default_adapters
 from melo_serve.client import Client, ControlError, NotRunning
@@ -70,6 +72,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     up.add_argument("-p", "--port", type=int, help="the front door's port")
     sub.add_parser("stop", help="stop the models and melo_serve")
+    plan = sub.add_parser(
+        "plan", help="what a first run would set up here, and its size (reads only)"
+    )
+    plan.add_argument("--json", action="store_true", help="the plan as JSON")
     sub.add_parser("doctor", help="check the backends, the login item and memory")
     sub.add_parser("install", help="start melo_serve at login")
     sub.add_parser("uninstall", help="remove the login item")
@@ -249,6 +255,20 @@ def cmd_stop(args: argparse.Namespace, settings: Settings, overrides: list[str])
     return 0
 
 
+def cmd_plan(args: argparse.Namespace, settings: Settings, overrides: list[str]) -> int:
+    plan = plan_module.build(
+        plan_module.probe_machine(settings),
+        fit.probe(),
+        catalog_module.load(),
+        default_adapters(),
+        settings,
+    )
+    print(
+        json.dumps(plan, indent=2) if args.json else plan_module.render(plan, _names())
+    )
+    return 0
+
+
 def cmd_doctor(
     args: argparse.Namespace, settings: Settings, overrides: list[str]
 ) -> int:
@@ -319,6 +339,7 @@ COMMANDS: dict[str, Callable[[argparse.Namespace, Settings, list[str]], int]] = 
     "use": cmd_use,
     "up": cmd_up,
     "stop": cmd_stop,
+    "plan": cmd_plan,
     "doctor": cmd_doctor,
     "install": cmd_install,
     "uninstall": cmd_uninstall,
