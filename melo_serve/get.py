@@ -21,7 +21,9 @@ import dataclasses
 import fcntl
 import json
 import os
+import platform
 import signal
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -50,7 +52,7 @@ KEPT = "finished files are kept; run the same command again to download the rest
 
 
 class _Cancelled(BaseException):
-    """Raised inside a download thread; a BaseException, so no retry loop eats it."""
+    """Stops the run; a BaseException, so no retry loop or ``except Exception`` eats it."""
 
 
 def _shown(text: str) -> str:
@@ -65,6 +67,7 @@ class _Out:
     def __init__(self, as_json: bool) -> None:
         self.as_json = as_json
         self.gone = False  # the reader of stdout has left
+        self.every = PROGRESS_EVERY if as_json else 10 * PROGRESS_EVERY
 
     def event(
         self,
@@ -86,6 +89,7 @@ class _Out:
             print(shown, flush=True)
         except BrokenPipeError:  # the caller closed the pipe: stop, say nothing
             self.gone = True
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
 
     def running(self, item: str, name: str, done: int, total: int) -> None:
         line = f"downloading {name}"
@@ -94,7 +98,7 @@ class _Out:
 
 
 class _Stop:
-    """SIGINT and SIGTERM stop a download; the files it finished stay."""
+    """SIGINT, SIGTERM and SIGHUP stop the run; what it finished stays."""
 
     def __init__(self, out: _Out) -> None:
         self.out = out
@@ -121,7 +125,8 @@ class _Stop:
     @contextlib.contextmanager
     def watching(self) -> Iterator[None]:
         old = {
-            s: signal.signal(s, self._handle) for s in (signal.SIGINT, signal.SIGTERM)
+            s: signal.signal(s, self._handle)
+            for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
         }
         try:
             yield
@@ -195,6 +200,9 @@ def run(args: argparse.Namespace, settings: Settings) -> int:
         except _Cancelled:
             out.event("get", "failed", stop.line())
             return STOPPED
+        except Exception as exc:  # a folder that cannot be made, a lock file, ...
+            out.event("get", "failed", f"failed: {_shown(str(exc))}")
+            return FAILED
 
 
 def _run(out: _Out, stop: _Stop, args: argparse.Namespace, settings: Settings) -> int:
@@ -293,7 +301,7 @@ def _get(
     )
     wants = [(hub, need)] if jobs else []
     wants += [
-        (installer.downloads_dir(), installer.disk_need(how))
+        (paths.downloads_dir(), installer.disk_need(how))
         for _, how in backends.values()
         if how and how.via == "dmg"
     ]
@@ -371,11 +379,15 @@ def _backends_to_install(
             backends[key] = (found, None)
             continue
         how = adapter.install_plan(macos)
-        why = (
-            f"{adapter.name} does not run on macOS {plan_module.macos_version() or '?'}"
-            if how is None
-            else installer.problem(how, adapter.name)
-        )
+        command = settings.backend(key).command
+        if command:
+            why = f"the command in config.toml ({_shown(command[0])}) was not found; fix or remove it"
+        elif platform.machine() != "arm64":
+            why = f"{adapter.name} needs Apple silicon"
+        elif how is None:
+            why = f"{adapter.name} does not run on macOS {plan_module.macos_version() or '?'}"
+        else:
+            why = installer.problem(how, adapter.name)
         if why:
             line = f"failed: {why}; {installer.NOT_INSTALLED}"
             _note(out, f"backend:{key}", adapter.name, "failed", line)
@@ -404,9 +416,10 @@ def _backend(
         say("skipped", CHOSEN)
         return OK
     if how is None:  # it was there before the run began
-        version = f" ({found.version})" if found.version else ""
-        if found.tested:
-            say("skipped", f"already installed{version}, skipped")
+        if not found.version:
+            say("skipped", "already installed (it did not say its version), skipped")
+        elif found.tested:
+            say("skipped", f"already installed ({found.version}), skipped")
         else:
             say(
                 "skipped", f"installed ({found.version}, not a tested version), skipped"
@@ -416,32 +429,28 @@ def _backend(
     stop.line = lambda: (
         f"Stopped while installing {adapter.name}. Run the same command again to continue."
     )
-    every = PROGRESS_EVERY if out.as_json else 10 * PROGRESS_EVERY
     last = [0.0]
 
     def progress(done: int, total: int) -> None:
         if out.gone:
             raise _Cancelled
         now = time.monotonic()
-        if done >= total or now - last[0] >= every:
+        if done >= total or now - last[0] >= out.every:
             last[0] = now
             out.running(item, name, done, total)
 
     try:
+        note = lambda text: say("running", _shown(text))  # noqa: E731
         if how.via == "dmg":
-            installer.install_app(how, progress, lambda text: say("running", text))
+            installer.install_app(how, progress, note)
         else:
-            log = paths.logs_dir() / "brew.log"
-            say(
-                "running",
-                f"installing {name} with Homebrew; its output goes to {paths.tilde(log)}",
-            )
-            installer.install_brew(how)
+            installer.install_brew(how, note)
         found = adapter.detect(settings)
-        if not found.found:
+        if not found.version:
             raise installer.InstallError(
-                f"{adapter.name} was installed but is not found on PATH",
-                "check that its folder is on PATH",
+                f"{adapter.name} was installed but does not run: "
+                f"{found.problem or 'it did not say its version'}",
+                "run melo-serve doctor",
             )
         if not found.tested and how.via == "dmg":
             raise installer.InstallError(
@@ -452,8 +461,8 @@ def _backend(
         after = getattr(exc, "after", installer.NOT_INSTALLED)
         say("failed", f"failed: {_shown(str(exc))}; {after}")
         return FAILED
-    note = "" if found.tested else " (not a tested version)"
-    say("done", f"installed {found.version}{note} into {how.dest}")
+    untested = "" if found.tested else " (not a tested version)"
+    say("done", f"installed {found.version}{untested} into {how.dest}")
     return OK
 
 
@@ -473,14 +482,13 @@ def _download(
 
     start, lock = finished(), threading.Lock()
     seen = {"at": 0.0, "bytes": start}
-    every = PROGRESS_EVERY if out.as_json else 10 * PROGRESS_EVERY
 
     def tick() -> None:  # runs in the hub's download threads
         if stop.event.is_set() or out.gone:
             raise _Cancelled
         now = time.monotonic()
         with lock:
-            if now - seen["at"] < every:
+            if now - seen["at"] < out.every:
                 return
             seen["at"], done = now, on_disk()
             if done != seen["bytes"]:  # say nothing when nothing moved

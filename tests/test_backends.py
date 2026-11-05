@@ -11,6 +11,7 @@ import contextlib
 import hashlib
 import json
 import os
+import platform
 import signal
 import threading
 from collections.abc import Iterator
@@ -38,6 +39,7 @@ class Mac:
     root: Path
     serves: bytes = PAYLOAD  # what the DMG server sends
     honour_range: bool = True
+    status: int = 0  # answer every request with this instead
     requests: list[str | None] | None = None  # the Range header of each request
 
     @property
@@ -54,7 +56,7 @@ class Mac:
 
     @property
     def downloads(self) -> Path:
-        return installer.downloads_dir()
+        return paths.downloads_dir()
 
     def add(self, name: str, body: str = "", folder: Path | None = None) -> Path:
         """A fake program that logs its arguments, then runs *body*."""
@@ -81,6 +83,9 @@ def serve(mac: Mac) -> Iterator[str]:
             body, wanted = mac.serves, self.headers.get("Range")
             assert mac.requests is not None
             mac.requests.append(wanted)
+            if mac.status:
+                self.send_error(mac.status)
+                return
             start = int(wanted[6:-1]) if wanted and mac.honour_range else 0
             self.send_response(206 if start else 200)
             if start:
@@ -115,6 +120,7 @@ def mac(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Mac]:
     monkeypatch.setattr(get, "PROGRESS_EVERY", 0)
     monkeypatch.setattr(fit, "free_bytes", lambda path: 100 * fit.GIB)
     monkeypatch.setattr(plan, "macos_version", lambda: "27.2")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
     monkeypatch.setattr(plan, "BREW", str(fake.root / "no-brew"))
     monkeypatch.setattr(omlx.OmlxAdapter, "known_paths", (omlx.USER_APP_CLI,))
     monkeypatch.setattr(SplashAdapter, "known_paths", (str(fake.splash),))
@@ -288,9 +294,121 @@ def test_a_backend_the_person_skips_is_left_alone(
 def test_too_little_room_for_the_dmg_is_refused_before_the_download(
     mac: Mac, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    room = 2 * len(PAYLOAD) + fit.MARGIN_BYTES - 1  # the DMG and the app, less a byte
+    room = 3 * len(PAYLOAD) + fit.MARGIN_BYTES - 1  # the DMG and the app, less a byte
     monkeypatch.setattr(fit, "free_bytes", lambda path: room)
     code, events = run_get(capsys, *OMLX)
     assert code == 2 and mac.requests == [] and mac.calls() == []
     assert lines(events, "disk")[0].startswith("failed: not enough space: needs ")
     assert not mac.downloads.exists()
+
+
+def test_an_image_a_killed_run_left_attached_is_detached_first(
+    mac: Mac, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mount = str(paths.home() / "dmg")
+    monkeypatch.setattr(os.path, "ismount", lambda path: str(path) == mount)
+    code, _ = run_get(capsys, *OMLX)
+    assert code == 0
+    tools = [c.split()[:2] for c in mac.calls() if c.startswith("hdiutil")]
+    assert tools == [["hdiutil", w] for w in ("detach", "attach", "detach")]
+
+
+def test_a_stop_during_the_detach_still_detaches(
+    mac: Mac, capsys: pytest.CaptureFixture[str]
+) -> None:
+    attach = (mac.root / "bin" / "hdiutil").read_text().split("\n", 2)[2]
+    mac.add(
+        "hdiutil",
+        'if [ "$1 $2" = "detach -force" ]; then exit 0; fi\n'
+        'if [ "$1" = detach ]; then kill -TERM $PPID; sleep 5; fi\n' + attach,
+    )
+    code, events = run_get(capsys, *OMLX)
+    assert code == 130 and events[-1]["state"] == "failed"
+    assert mac.calls()[-1].startswith("hdiutil detach -force")
+    assert not list(mac.apps.iterdir())
+
+
+def test_a_stop_lets_homebrew_clean_up(
+    mac: Mac, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mac.add(
+        "brew",
+        f"trap 'echo cleaned up >> \"{mac.log}\"; exit 1' TERM\n"
+        "kill -TERM $PPID\nsleep 5 &\nwait",
+    )
+    code, _ = run_get(capsys, *SPLASH)
+    assert code == 130 and mac.calls()[-1] == "cleaned up"
+
+
+def test_a_backend_that_does_not_answer_is_not_called_installed(
+    mac: Mac, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mac.add(
+        "ditto",
+        'cp -R "$1" "$2"; printf "#!/bin/sh\\n" > "$2/Contents/MacOS/omlx-cli"',
+    )
+    code, events = run_get(capsys, *OMLX)
+    assert code == 1
+    assert lines(events, "backend:omlx")[-1] == (
+        "failed: oMLX was installed but does not run: it did not say its version; "
+        "run melo-serve doctor"
+    )
+
+
+def test_what_cannot_work_is_refused_before_the_download(
+    mac: Mac, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refused(why: str) -> None:
+        code, events = run_get(capsys, *OMLX)
+        assert code == 2 and mac.requests == [] and mac.calls() == []
+        assert lines(events, "backend:omlx") == [
+            f"failed: {why}; nothing was installed"
+        ]
+
+    config = paths.config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text('[backends.omlx]\ncommand = ["/nonexistent/omlx"]\n')
+    refused(
+        "the command in config.toml (/nonexistent/omlx) was not found; fix or remove it"
+    )
+    config.unlink()
+    with monkeypatch.context() as intel:
+        intel.setattr(platform, "machine", lambda: "x86_64")
+        refused("oMLX needs Apple silicon")
+    mac.apps.rmdir()
+    mac.apps.write_text("")
+    refused("~/Applications is not a folder melo-serve can write to")
+
+
+def test_a_relative_path_entry_is_not_searched(
+    mac: Mac, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    work = mac.root / "work"
+    mac.add("brew", folder=work)
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("PATH", os.environ["PATH"] + ":")
+    code, _ = run_get(capsys, *SPLASH)
+    assert code == 2 and mac.calls() == []
+
+
+@pytest.mark.parametrize(
+    ("status", "kept"), [(0, True), (416, False)], ids=["a login page", "416"]
+)
+def test_a_reply_that_is_not_the_file_does_not_touch_a_good_part(
+    mac: Mac, capsys: pytest.CaptureFixture[str], status: int, kept: bool
+) -> None:
+    mac.serves, mac.honour_range, mac.status = b"<html>log in</html>", False, status
+    part = mac.part(PAYLOAD[:200])
+    code, _ = run_get(capsys, *OMLX)
+    assert code == 1 and part.exists() is kept
+    assert not kept or part.read_bytes() == PAYLOAD[:200]
+
+
+def test_a_folder_that_cannot_be_made_is_a_failed_line_not_a_traceback(
+    mac: Mac, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    blocked = mac.root / "a-file"
+    blocked.write_text("")
+    monkeypatch.setenv("MELO_SERVE_HOME", str(blocked))
+    code, events = run_get(capsys, *OMLX)
+    assert code == 1 and events[-1]["line"].startswith("failed: ")

@@ -14,8 +14,9 @@ import hashlib
 import http.client
 import os
 import shutil
+import signal
 import subprocess
-import tempfile
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -25,12 +26,13 @@ from melo_serve.adapters.base import InstallPlan
 from melo_serve.plan import find_brew
 
 CHUNK = 1 << 20
+GRACE_S = 30  # how long a stopped command gets to clean up
 NOT_INSTALLED = "nothing was installed"
 PART_KEPT = "what came is kept; run the same command again to continue"
 HOMEBREW_ENV = {
     "HOMEBREW_NO_AUTO_UPDATE": "1",  # do not update all of Homebrew first
     "HOMEBREW_NO_ANALYTICS": "1",
-    "NONINTERACTIVE": "1",  # never wait for input
+    "HOMEBREW_NO_INSTALL_CLEANUP": "1",  # touch this formula only
 }
 
 
@@ -44,7 +46,24 @@ class InstallError(Exception):
 
 def _last_line(text: str) -> str:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    return lines[-1][:100] if lines else ""
+    return lines[-1].replace(str(Path.home()), "~")[:100] if lines else ""
+
+
+def _wait(proc: subprocess.Popen[str], timeout: int) -> str:
+    """What *proc* printed. A stop or the time limit ends its whole group with SIGTERM.
+
+    SIGKILL only after a grace period: ``brew`` cleans up a half-installed formula
+    when it is told to stop, and leaves it looking installed when it is killed.
+    """
+    try:
+        return proc.communicate(timeout=timeout)[0] or ""
+    except BaseException:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGTERM)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(GRACE_S)
+        proc.kill()
+        raise
 
 
 def _run(
@@ -61,47 +80,54 @@ def _run(
     """
     what = Path(argv[0]).name
     try:
-        if log is None:
-            done = subprocess.run(
-                argv, capture_output=True, text=True, timeout=timeout, env=env,
-                stdin=subprocess.DEVNULL, check=False,
-            )  # fmt: skip
-            text = (done.stderr or "") + (done.stdout or "")
-        else:
-            with log.open("wb") as sink:
-                done = subprocess.run(
-                    argv, text=True, stdout=sink, stderr=subprocess.STDOUT, timeout=timeout,
-                    env=env, stdin=subprocess.DEVNULL, check=False,
+        with contextlib.ExitStack() as stack:
+            sink = stack.enter_context(log.open("wb")) if log else subprocess.PIPE
+            proc = stack.enter_context(
+                subprocess.Popen(
+                    argv,
+                    stdin=subprocess.DEVNULL,
+                    stdout=sink,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    text=True,
+                    errors="replace",
+                    start_new_session=True,
                 )  # fmt: skip
-            text = log.read_bytes()[-4000:].decode(errors="replace")
+            )
+            text = _wait(proc, timeout)
     except subprocess.TimeoutExpired:
         raise InstallError(f"{what} did not finish in {timeout} s") from None
     except (OSError, subprocess.SubprocessError) as exc:
         raise InstallError(f"{what} could not run: {exc}") from None
+    if log:
+        text = log.read_bytes()[-4000:].decode(errors="replace")
     last = _last_line(text)
-    if check and done.returncode:
-        raise InstallError(f"{what} failed: {last or f'exit code {done.returncode}'}")
-    return done.returncode, last
+    if check and proc.returncode:
+        raise InstallError(f"{what} failed: {last or f'exit code {proc.returncode}'}")
+    return proc.returncode, last
 
 
 def app_path(plan: InstallPlan) -> Path:
     return Path(plan.dest).expanduser()
 
 
-def downloads_dir() -> Path:
-    return paths.home() / "downloads"
-
-
 def problem(plan: InstallPlan, name: str) -> str:
     """Why *plan* cannot be run now ("" when it can); checked before anything starts."""
     if plan.via == "homebrew":
         return "" if find_brew() else f"{name} needs Homebrew (brew.sh)"
-    if os.path.lexists(app_path(plan)):
+    app = app_path(plan)
+    if os.path.lexists(app):
         return (
-            f"{paths.tilde(app_path(plan))} exists but is not a working {name}; "
-            "move it away first"
+            f"{paths.tilde(app)} exists but is not a working {name}; move it away first"
         )
+    folder = app.parent
+    if os.path.lexists(folder) and not (folder.is_dir() and os.access(folder, os.W_OK)):
+        return f"{paths.tilde(folder)} is not a folder melo-serve can write to"
     return ""
+
+
+def _part(plan: InstallPlan) -> Path:
+    return paths.downloads_dir() / (plan.file + ".part")
 
 
 def disk_need(plan: InstallPlan) -> int:
@@ -109,7 +135,7 @@ def disk_need(plan: InstallPlan) -> int:
 
     The app unpacks to about twice the DMG (oMLX 0.7.3: 881 MB to 1.7 GB).
     """
-    part = downloads_dir() / (plan.file + ".part")
+    part = _part(plan)
     have = part.stat().st_size if part.exists() else 0
     return max(0, plan.size_bytes - have) + 2 * plan.size_bytes
 
@@ -142,6 +168,11 @@ def _fetch(
             resumed = reply.status == 206 and (
                 (reply.headers.get("Content-Range") or "").startswith(f"bytes {have}-")
             )
+            length = reply.headers.get("Content-Length")
+            if (reply.status == 206 and not resumed) or (
+                reply.status == 200 and length not in (None, str(total))
+            ):  # a captive portal, say: what is on disk stays
+                raise InstallError("the server did not send the file", PART_KEPT)
             done = have if resumed else 0  # a server that sends it all starts over
             progress(done, total)
             with part.open("ab" if resumed else "wb") as sink:
@@ -152,8 +183,11 @@ def _fetch(
                     done += len(block)
                     progress(min(done, total), total)
     except (OSError, http.client.HTTPException) as exc:  # URLError is an OSError
+        if isinstance(exc, urllib.error.HTTPError) and exc.code == 416:
+            part.unlink()  # not a start of this file: the next run begins again
         raise InstallError(
-            f"could not download {part.name[: -len('.part')]}: {exc}", PART_KEPT
+            f"could not download {part.name[: -len('.part')]}: {exc}",
+            PART_KEPT if part.exists() else "run the same command again",
         ) from None
     size = part.stat().st_size
     if size > total:
@@ -170,10 +204,10 @@ def download(plan: InstallPlan, progress: Callable[[int, int], None]) -> Path:
 
     A file that does not match the pinned values is deleted.
     """
-    final = downloads_dir() / plan.file
+    final = paths.downloads_dir() / plan.file
     if not final.exists():
-        downloads_dir().mkdir(parents=True, exist_ok=True)
-        part = final.with_name(plan.file + ".part")
+        final.parent.mkdir(parents=True, exist_ok=True)
+        part = _part(plan)
         _fetch(plan.url, part, plan.size_bytes, progress)
         part.replace(final)
     if final.stat().st_size != plan.size_bytes or _sha256(final) != plan.sha256:
@@ -195,21 +229,57 @@ def _gatekeeper(app: Path) -> str:
     return "Gatekeeper accepts it" if code == 0 else f"Gatekeeper says: {last}"
 
 
+def _detach(mount: Path) -> bool:
+    """Detach the image at *mount*, forcing it if it is busy; whether that worked.
+
+    A stop that comes meanwhile waits for this, or the image would stay attached.
+    """
+    stop: BaseException | None = None
+    detached = False
+    for extra in ([], ["-force"]):
+        try:
+            _run(["hdiutil", "detach", *extra, str(mount)], 120)
+            detached = True
+            break
+        except InstallError:
+            continue
+        except BaseException as exc:
+            stop = exc
+    if stop:
+        raise stop
+    return detached
+
+
+def _remove(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.exists():
+        shutil.rmtree(path)
+
+
 def install_app(
     plan: InstallPlan,
     progress: Callable[[int, int], None],
     note: Callable[[str], None],
 ) -> None:
-    """Download the DMG, check it, and copy its app to ``plan.dest``."""
+    """Download the DMG, check it, and copy its app to ``plan.dest``.
+
+    The mount folder is always the same, so an image that a killed run left attached
+    is found and detached here; ``get.lock`` keeps two runs from sharing it.
+    """
     dest = app_path(plan)
     new = dest.with_name(dest.name + ".new")
     dmg = download(plan, progress)
     note("checked the size and sha256 of the download")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.rmtree(new, ignore_errors=True)  # left by a stop
-    mount = Path(tempfile.mkdtemp(prefix="melo-serve-dmg-"))
+    _remove(new)  # left by a stop
+    mount = paths.home() / "dmg"
+    if os.path.ismount(mount):
+        _detach(mount)
+    mount.mkdir(exist_ok=True)
     copied = False
     try:
+        detached = False
         try:
             _run(
                 ["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint",
@@ -217,14 +287,11 @@ def install_app(
             )  # fmt: skip
             _run(["ditto", str(mount / dest.name), str(new)], 900)
         finally:
-            for extra in ([], ["-force"]):
-                try:
-                    _run(["hdiutil", "detach", *extra, str(mount)], 120)
-                    break
-                except InstallError:
-                    continue
+            detached = _detach(mount)
             with contextlib.suppress(OSError):
                 mount.rmdir()
+        if not detached:
+            note("the disk image stayed attached; eject it in Finder")
         try:
             _run(["codesign", "--verify", "--deep", "--strict", str(new)], 300)
         except InstallError as exc:
@@ -235,18 +302,21 @@ def install_app(
         copied = True
     finally:
         if not copied:
-            shutil.rmtree(new, ignore_errors=True)
+            with contextlib.suppress(OSError):
+                _remove(new)
     new.rename(dest)
-    dmg.unlink(missing_ok=True)
+    with contextlib.suppress(OSError):
+        dmg.unlink()
     note(_gatekeeper(dest))
 
 
-def install_brew(plan: InstallPlan) -> Path:
-    """``brew install`` the formula; its output goes to ``logs/brew.log``. Returns the log."""
+def install_brew(plan: InstallPlan, note: Callable[[str], None]) -> None:
+    """``brew install`` the formula; its output goes to ``logs/brew.log``."""
     brew = find_brew()
     if brew is None:
         raise InstallError("Homebrew (brew.sh) was not found")
     log = paths.logs_dir() / "brew.log"
+    note(f"installing with Homebrew; its output goes to {paths.tilde(log)}")
     try:
         _run(
             [brew, "install", plan.formula], 3600,
@@ -256,4 +326,3 @@ def install_brew(plan: InstallPlan) -> Path:
         raise InstallError(
             str(exc), f"the whole output is in {paths.tilde(log)}"
         ) from None
-    return log

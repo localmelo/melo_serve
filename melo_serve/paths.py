@@ -44,6 +44,10 @@ def logs_dir() -> Path:
     return home() / "logs"
 
 
+def downloads_dir() -> Path:
+    return home() / "downloads"
+
+
 def lock_path() -> Path:
     return home() / "daemon.lock"
 

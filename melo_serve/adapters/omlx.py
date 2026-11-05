@@ -80,10 +80,7 @@ class OmlxAdapter(Adapter):
     key = "omlx"
     name = "oMLX"
     default_command = ("omlx",)
-    install_hint = (
-        "brew tap jundot/omlx https://github.com/jundot/omlx && "
-        "brew install jundot/omlx/omlx"
-    )
+    install_hint = "melo-serve get <pick> installs it"
     tested_versions = ("0.7.",)
     known_paths = (APP_CLI, USER_APP_CLI)
 

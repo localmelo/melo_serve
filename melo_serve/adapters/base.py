@@ -73,7 +73,7 @@ class Adapter(abc.ABC):
             return configured
         if shutil.which(self.default_command[0]) is None:
             for known in map(os.path.expanduser, self.known_paths):
-                if os.path.exists(known):
+                if os.access(known, os.X_OK):
                     return (known,)
         return self.default_command
 
@@ -99,6 +99,7 @@ class Adapter(abc.ABC):
                 [*command, "--version"],
                 capture_output=True,
                 text=True,
+                errors="replace",
                 timeout=30,
                 check=False,
             )

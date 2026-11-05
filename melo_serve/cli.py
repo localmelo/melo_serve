@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -373,7 +374,14 @@ COMMANDS: dict[str, Callable[[argparse.Namespace, Settings, list[str]], int]] = 
 }
 
 
+def _drop_relative_path_entries() -> None:
+    """An empty or relative PATH entry would run a ``brew`` from the working folder."""
+    entries = os.environ.get("PATH", os.defpath).split(os.pathsep)
+    os.environ["PATH"] = os.pathsep.join(filter(os.path.isabs, entries))
+
+
 def main(argv: list[str] | None = None) -> int:
+    _drop_relative_path_entries()
     args = _parser().parse_args(argv)
     overrides = list(args.overrides)
     if getattr(args, "port", None) is not None:
