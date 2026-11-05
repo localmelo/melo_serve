@@ -77,6 +77,12 @@ class Settings:
     def backend(self, key: str) -> BackendSettings:
         return self.backends.get(key, BackendSettings())
 
+    def hf_home_source(self) -> str:
+        """Where the cache folder comes from: ``config``, ``env`` or ``default``."""
+        if self.hf_home:
+            return "config"
+        return "env" if os.environ.get("HF_HOME") else "default"
+
     def resolved_hf_home(self) -> str:
         value = self.hf_home or os.environ.get("HF_HOME") or "~/.cache/huggingface"
         return str(Path(value).expanduser())
