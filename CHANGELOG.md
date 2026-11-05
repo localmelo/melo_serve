@@ -44,6 +44,9 @@ melo_serve has no release yet.
   not on this Mac is still refused unless `model:<id>` is skipped, so `plan` recommends such a pick only when its model is
   there, and each model item of the plan names its `backend`. (#14)
 
+- `melo-serve plan --pick PICK` plans another chat pick, so a client can show the true sizes and backends of an
+  alternative before anyone says yes. (#16)
+
 ### Changed
 
 - `POST /switch` on the control socket refuses a field of the wrong type with `400` `bad_request` instead of guessing:
