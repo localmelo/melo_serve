@@ -64,6 +64,7 @@ async def test_starts_on_first_request_and_relays(tmp_path: Path) -> None:
             state["roles"]["chat"]["status"] == "ready"
             and state["roles"]["embedding"]["dims"] == 8
         )
+        assert state["roles"]["chat"]["backend_name"] == "Splash"
 
 
 async def test_switch_retires_the_old_model(tmp_path: Path) -> None:

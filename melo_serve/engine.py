@@ -200,6 +200,7 @@ class Engine:
             if pick is None:
                 roles[role] = None
                 continue
+            adapter = self.adapters.get(pick.backend)
             status, error = self._effective(slot)
             roles[role] = {
                 "pick": pick.id,
@@ -207,6 +208,7 @@ class Engine:
                 "name": pick.name,
                 "model": pick.served_name,
                 "backend": pick.backend,
+                "backend_name": adapter.name if adapter else pick.backend,
                 "status": status,
                 "loaded": slot.loaded and status == "ready",
                 "caps": list(pick.caps),

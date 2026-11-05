@@ -18,7 +18,7 @@ melo_serve has no release yet.
 
 - `GET /v1/models` says which model reads pictures (`"vision": true` or `false`), and `GET /v1/models/status` lists the
   served models and whether each is loaded, in oMLX's shape, so a client such as localmelo can turn pictures on for
-  the models that read them. (#4)
+  the models that read them. Each role in the state names its backend for display (`backend_name`). (#4)
 
 ### Changed
 

@@ -129,7 +129,7 @@ A request that finds its model unloaded starts it, and can fail with the load er
   "roles": {
     "chat": {
       "pick": "qwen3.8-27b-splash", "short": "27b", "name": "Qwen3.8 27B",
-      "model": "Qwen3.8-27B-Q4KM-splash", "backend": "splash",
+      "model": "Qwen3.8-27B-Q4KM-splash", "backend": "splash", "backend_name": "Splash",
       "status": "ready", "loaded": true, "caps": ["tools", "vision", "reasoning"],
       "dims": null, "since": "2026-11-05T02:20:00-05:00", "error": "",
       "retired": ["Qwen3-8B-4bit"],
@@ -141,7 +141,7 @@ A request that finds its model unloaded starts it, and can fail with the load er
 }
 ```
 
-The values are illustrative. A role is `null` when no pick is chosen. The top-level `status` is `ready`, `switching`, `degraded` or `stopped`; a role's is `stopped`, `starting`, `ready` or `failed` (then `error` says why). `dims` is the embedding size (else `null`). `retired` lists the served names that now get `model_switched`. `switch` is `null`, or `{"pick", "role", "phase", "load_s", "since"}` while a switch runs; `phase` is `checking`, `draining`, `stopping`, `loading` or `rolling back`.
+The values are illustrative. A role is `null` when no pick is chosen. The top-level `status` is `ready`, `switching`, `degraded` or `stopped`; a role's is `stopped`, `starting`, `ready` or `failed` (then `error` says why). `dims` is the embedding size (else `null`). `backend_name` is the display name of `backend` (`Splash`, `oMLX`). `retired` lists the served names that now get `model_switched`. `switch` is `null`, or `{"pick", "role", "phase", "load_s", "since"}` while a switch runs; `phase` is `checking`, `draining`, `stopping`, `loading` or `rolling back`.
 
 `generation` starts at 0, survives restarts, and goes up by one each time a switch finishes loading a model. A switch to what is already served and ready, a failed switch and a load on demand leave it as it is.
 
