@@ -16,7 +16,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -27,6 +26,7 @@ from melo_serve.plan import find_brew
 
 CHUNK = 1 << 20
 NOT_INSTALLED = "nothing was installed"
+PART_KEPT = "what came is kept; run the same command again to continue"
 HOMEBREW_ENV = {
     "HOMEBREW_NO_AUTO_UPDATE": "1",  # do not update all of Homebrew first
     "HOMEBREW_NO_ANALYTICS": "1",
@@ -124,6 +124,8 @@ def _fetch(
 ) -> None:
     """Download *url* into *part*, continuing a cut-short file with a Range request."""
     have = part.stat().st_size if part.exists() else 0
+    if have == total:  # a stop came just after the last byte
+        return
     if have > total:
         part.unlink()
         have = 0
@@ -148,8 +150,7 @@ def _fetch(
                     progress(min(done, total), total)
     except (OSError, http.client.HTTPException) as exc:  # URLError is an OSError
         raise InstallError(
-            f"could not download {part.name[: -len('.part')]}: {exc}",
-            "the part that came is kept; run the same command again to continue",
+            f"could not download {part.name[: -len('.part')]}: {exc}", PART_KEPT
         ) from None
     size = part.stat().st_size
     if size > total:
@@ -157,8 +158,7 @@ def _fetch(
         raise InstallError(f"the download is larger than the pinned {total} bytes")
     if size < total:
         raise InstallError(
-            f"the download stopped at {size} of {total} bytes",
-            "the part that came is kept; run the same command again to continue",
+            f"the download stopped at {size} of {total} bytes", PART_KEPT
         )
 
 
@@ -214,7 +214,7 @@ def install_app(
             )  # fmt: skip
             _run(["ditto", str(mount / dest.name), str(new)], 900)
         finally:
-            for extra in ([], ["-force"]):  # the image is never left mounted
+            for extra in ([], ["-force"]):
                 try:
                     _run(["hdiutil", "detach", *extra, str(mount)], 120)
                     break

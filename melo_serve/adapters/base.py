@@ -9,6 +9,7 @@ so tests check it as is.
 from __future__ import annotations
 
 import abc
+import os
 import re
 import shutil
 import signal
@@ -61,12 +62,20 @@ class Adapter(abc.ABC):
     key = ""
     name = ""
     default_command: tuple[str, ...] = ()
+    known_paths: tuple[str, ...] = ()  # where it lives when PATH does not reach it
     install_hint = ""
     tested_versions: tuple[str, ...] = ()
     ready_path = "/health"  # answers 200 once requests are served
 
     def command(self, settings: Settings) -> tuple[str, ...]:
-        return settings.backend(self.key).command or self.default_command
+        configured = settings.backend(self.key).command
+        if configured:
+            return configured
+        if shutil.which(self.default_command[0]) is None:
+            for known in map(os.path.expanduser, self.known_paths):
+                if os.path.exists(known):
+                    return (known,)
+        return self.default_command
 
     def release_path(self, pick: Pick) -> str:
         """The POST that frees *pick*'s memory and keeps the process; "" for none."""

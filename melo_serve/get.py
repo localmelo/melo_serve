@@ -448,8 +448,9 @@ def _backend(
                 f"{adapter.name} says it is version {found.version}, not {how.version}",
                 f"it was left in {how.dest}",
             )
-    except installer.InstallError as exc:
-        say("failed", f"failed: {_shown(str(exc))}; {exc.after}")
+    except (installer.InstallError, OSError) as exc:  # OSError: a folder, a full disk
+        after = getattr(exc, "after", installer.NOT_INSTALLED)
+        say("failed", f"failed: {_shown(str(exc))}; {after}")
         return FAILED
     note = "" if found.tested else " (not a tested version)"
     say("done", f"installed {found.version}{note} into {how.dest}")

@@ -22,6 +22,7 @@ class SplashAdapter(Adapter):
     key = "splash"
     name = "Splash"
     default_command = ("splash",)
+    known_paths = ("/opt/homebrew/bin/splash",)  # an app's PATH has no Homebrew
     install_hint = "brew install incoai/tap/splash"
     tested_versions = ("1.5.",)
     ready_path = "/ready"

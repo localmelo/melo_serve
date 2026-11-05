@@ -9,7 +9,6 @@ oMLX's ``settings.json``.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import signal
 from pathlib import Path
@@ -86,16 +85,7 @@ class OmlxAdapter(Adapter):
         "brew install jundot/omlx/omlx"
     )
     tested_versions = ("0.7.",)
-
-    def command(self, settings: Settings) -> tuple[str, ...]:
-        configured = settings.backend(self.key).command
-        if configured:
-            return configured
-        if shutil.which("omlx") is None:
-            for cli in (APP_CLI, os.path.expanduser(USER_APP_CLI)):
-                if os.path.exists(cli):
-                    return (cli,)
-        return self.default_command
+    known_paths = (APP_CLI, USER_APP_CLI)
 
     def install_plan(self, macos: tuple[int, ...]) -> InstallPlan | None:
         """The pinned DMG for this macOS: 15, or 26 and later; none for older."""
