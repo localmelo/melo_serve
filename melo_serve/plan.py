@@ -152,8 +152,12 @@ def build(
     catalog: Catalog,
     adapters: Mapping[str, Adapter],
     settings: Settings,
+    chosen: str = "",
 ) -> dict[str, Any]:
-    """The plan for *machine*; every probe is an argument, so tests pass fakes."""
+    """The plan for *machine*, around the pick *chosen* or the recommended one.
+
+    Every probe is an argument, so tests pass fakes.
+    """
     plan: dict[str, Any] = {
         "schema": SCHEMA, "machine": asdict(machine), "supported": False, "reason": "",
         "reason_hint": "", "pick": None, "items": [], "download_bytes": 0,
@@ -197,7 +201,10 @@ def build(
     if not chats:
         plan["reason"] = "No model fits this Mac."
         return plan
-    chat = chats[0]
+    chat = next((p for p in chats if p.id == chosen), None) if chosen else chats[0]
+    if chat is None:
+        plan["reason"] = f"{chosen} cannot be set up on this Mac."
+        return plan
     verdict = fit.check(chat, memory, **limits)  # this moment's, for information
     picks = [chat, *embedders[:1]]
     keys = list(dict.fromkeys(p.backend for p in picks))
@@ -217,7 +224,9 @@ def build(
         download_bytes=download,
         enough_disk=machine.free_gb * GIB >= download + MARGIN_BYTES,
         alternatives=[
-            {"id": p.id, "name": p.name, "backend": p.backend} for p in chats[1:]
+            {"id": p.id, "name": p.name, "backend": p.backend}
+            for p in chats
+            if p is not chat
         ],
     )
     return plan

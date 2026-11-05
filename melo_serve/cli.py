@@ -77,6 +77,7 @@ def _parser() -> argparse.ArgumentParser:
         "plan", help="what a first run would set up here, and its size (reads only)"
     )
     plan.add_argument("--json", action="store_true", help="the plan as JSON")
+    plan.add_argument("--pick", default="", help="plan this chat pick instead")
     get = sub.add_parser(
         "get", help="install the backends of some picks and download their models"
     )
@@ -271,12 +272,19 @@ def cmd_stop(args: argparse.Namespace, settings: Settings, overrides: list[str])
 
 
 def cmd_plan(args: argparse.Namespace, settings: Settings, overrides: list[str]) -> int:
+    catalog = catalog_module.load()
+    try:
+        chosen = catalog.resolve(args.pick).id if args.pick else ""
+    except catalog_module.UnknownPick as exc:
+        print(f"melo-serve: {exc}", file=sys.stderr)
+        return 2
     plan = plan_module.build(
         plan_module.probe_machine(settings),
         fit.probe(),
-        catalog_module.load(),
+        catalog,
         default_adapters(),
         settings,
+        chosen,
     )
     print(
         json.dumps(plan, indent=2) if args.json else plan_module.render(plan, _names())
