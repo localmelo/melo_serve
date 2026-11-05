@@ -8,14 +8,49 @@ route but ``/health`` and ``/ready``, and frees its weights after
 
 from __future__ import annotations
 
+import re
 import signal
+from collections import Counter
+from collections.abc import Iterable
+from fnmatch import fnmatchcase
 from pathlib import Path
 
-from melo_serve.adapters.base import Adapter, InstallPlan, Launch
-from melo_serve.catalog import Pick
+from melo_serve.adapters.base import (
+    Adapter,
+    InstallPlan,
+    Launch,
+    snapshot_files,
+)
+from melo_serve.catalog import HubRepo, Pick
 from melo_serve.settings import Settings
 
 MODELS_DIR = "~/Library/Application Support/Splash/models"
+
+
+SHARD = re.compile(
+    r"^(.+)-\d{5}-of-(\d{5})\.gguf$"
+)  # a split GGUF: name-00001-of-00002
+
+
+def _shards_whole(names: Iterable[str]) -> bool:
+    """Whether each split GGUF among *names* has all its parts."""
+    parts = Counter(m.groups() for n in names if (m := SHARD.match(n)))
+    return all(count == int(total) for (_, total), count in parts.items())
+
+
+def _in_cache(repo: HubRepo, hf_home: str) -> bool:
+    """Whether the cache has all of *repo*'s files that the pick needs.
+
+    With a file list, each pattern must match a file, and no split GGUF may lack a part
+    (a pattern such as ``IQ3_XXS/*`` cannot say how many files it should match). Without
+    one the Hub's own list is not at hand, so a snapshot with files is taken as whole.
+    A link to a missing blob never counts.
+    """
+    files = snapshot_files(repo, hf_home)
+    if not files or not all(p.exists() for p in files.values()):
+        return False
+    found = all(any(fnmatchcase(n, pat) for n in files) for pat in repo.files)
+    return found and _shards_whole(files)
 
 
 class SplashAdapter(Adapter):
@@ -44,6 +79,11 @@ class SplashAdapter(Adapter):
             return f"{pick.source!r} is not OWNER/REPO[:VARIANT]"
         models = Path(settings.backend(self.key).models_dir or MODELS_DIR).expanduser()
         if (models / pick.source).exists():
+            return ""
+        # Splash prepares its model from a complete cache, with links and no second copy.
+        home = settings.resolved_hf_home()
+        repos = self.hub_files(pick)
+        if repos and all(_in_cache(r, home) for r in repos):
             return ""
         return "not downloaded yet (Splash has not prepared it)"
 

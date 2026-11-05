@@ -13,8 +13,8 @@ import shutil
 import signal
 from pathlib import Path
 
-from melo_serve.adapters.base import Adapter, InstallPlan, Launch
-from melo_serve.catalog import Pick
+from melo_serve.adapters.base import Adapter, InstallPlan, Launch, hf_snapshot
+from melo_serve.catalog import HubRepo, Pick
 from melo_serve.settings import Settings
 
 APP_CLI = "/Applications/oMLX.app/Contents/MacOS/omlx-cli"
@@ -35,23 +35,6 @@ DMGS = (  # (first macOS major it is for, file, bytes, sha256); one DMG per macO
         "2acfde41aeac0b022dbca803ca109437f3ccaf0c33f3415881526b985bee86f2",
     ),
 )
-
-
-def hf_store(repo: str, hf_home: str) -> Path:
-    return Path(hf_home) / "hub" / ("models--" + repo.replace("/", "--"))
-
-
-def hf_snapshot(repo: str, hf_home: str) -> Path | None:
-    """The local snapshot of a Hugging Face repo, found without the network."""
-    store = hf_store(repo, hf_home)
-    try:
-        revision = (store / "refs" / "main").read_text(encoding="utf-8").strip()
-    except OSError:
-        revision = ""
-    if revision and (store / "snapshots" / revision).is_dir():
-        return store / "snapshots" / revision
-    snapshots = sorted((store / "snapshots").glob("*")) if store.is_dir() else []
-    return snapshots[-1] if snapshots else None
 
 
 def missing_weights(path: Path) -> str:
@@ -83,7 +66,6 @@ class OmlxAdapter(Adapter):
     install_hint = "melo-serve get <pick> installs it"
     tested_versions = ("0.7.",)
     known_paths = (APP_CLI, USER_APP_CLI)
-    downloads_models = True
 
     def install_plan(self, macos: tuple[int, ...]) -> InstallPlan | None:
         """The pinned DMG for this macOS: 15, or 26 and later; none for older."""
@@ -99,21 +81,9 @@ class OmlxAdapter(Adapter):
     def release_path(self, pick: Pick) -> str:
         return f"/v1/models/{pick.served_name}/unload"
 
-    def cached_bytes(
-        self, pick: Pick, settings: Settings, include_partial: bool = False
-    ) -> int:
-        """Bytes of finished files; the hub never reuses a cut-short ``.incomplete``."""
-        if pick.is_local:
-            return 0
-        blobs = hf_store(pick.source, settings.resolved_hf_home()) / "blobs"
-        try:
-            return sum(
-                f.stat().st_size
-                for f in blobs.iterdir()
-                if f.is_file() and (include_partial or f.suffix != ".incomplete")
-            )
-        except OSError:
-            return 0
+    def hub_files(self, pick: Pick) -> tuple[HubRepo, ...]:
+        """The whole repo: oMLX loads the folder as it is."""
+        return () if pick.is_local else (HubRepo(pick.source),)
 
     def model_path(self, pick: Pick, settings: Settings) -> Path | None:
         if pick.is_local:

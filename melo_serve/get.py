@@ -10,7 +10,9 @@ events (``item``, ``state``, ``done_bytes``, ``total_bytes``, ``line``) for a cl
 such as localmelo. A refused run installs and downloads nothing, but melo_serve's own
 folder and ``get.lock`` are made first. ``--skip ITEM`` leaves an item out.
 
-Only oMLX picks are downloaded here; a Splash model comes in a later version.
+What a pick downloads is its adapter's ``hub_files``: the whole repo of an oMLX
+model, and the repos and files a Splash pick lists. Splash prepares its model from
+that cache when it first loads it, with links and no second copy.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ from melo_serve import plan as plan_module
 from melo_serve import settings as settings_module
 from melo_serve.adapters import Adapter, default_adapters
 from melo_serve.adapters.base import Install, InstallPlan
-from melo_serve.catalog import Pick
+from melo_serve.catalog import HubRepo, Pick
 from melo_serve.settings import Settings
 
 OK, FAILED, CANNOT_START, BUSY, STOPPED = 0, 1, 2, 75, 130
@@ -145,27 +147,29 @@ def _lock_busy(fd: int) -> str | None:
     return None
 
 
-def _progress_class(tick: Callable[[], None]) -> type:
-    """A tqdm that draws nothing; each update ticks (progress, and the stop check)."""
+def _progress_class(tick: Callable[[int], None]) -> type:
+    """A tqdm that draws nothing; each update ticks with the bytes that came, if any
+    (progress, and the stop check). The hub's other bars count files."""
     from huggingface_hub.utils import tqdm
 
     class Ticker(tqdm):  # type: ignore[misc]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.counts_bytes = kwargs.get("unit") == "B"
             super().__init__(*args, **{**kwargs, "disable": True})
 
         def update(self, n: float | None = 1) -> bool | None:
-            tick()
+            tick(int(n or 0) if self.counts_bytes else 0)
             return super().update(n)
 
     return Ticker
 
 
-def _hub_bytes(repo: str) -> int:
-    """Exact bytes of every file of *repo* on the Hub."""
+def _hub_bytes(repo: HubRepo) -> int:
+    """Exact bytes on the Hub of the files of *repo* that are to be downloaded."""
     from huggingface_hub import HfApi
 
-    info = HfApi().model_info(repo, files_metadata=True)
-    return sum(f.size or 0 for f in info.siblings or [])
+    info = HfApi().model_info(repo.repo, files_metadata=True)
+    return sum(f.size or 0 for f in info.siblings or [] if repo.matches(f.rfilename))
 
 
 def _save_hf_home(out: _Out, saved: Settings, explicit: str) -> None:
@@ -267,7 +271,7 @@ def _get(
     hub = Path(settings.hf_home) / "hub"
     adapters = default_adapters()
     skipped: list[tuple[Pick, str]] = []
-    jobs: list[tuple[Pick, Any]] = []
+    jobs: list[tuple[Pick, Adapter]] = []
     for pick in picks:
         adapter = adapters.get(pick.backend)
         if adapter is None:
@@ -276,13 +280,7 @@ def _get(
             skipped.append((pick, CHOSEN))
         elif not adapter.installed(pick, settings):
             skipped.append((pick, "already downloaded, skipped"))
-        elif not adapter.downloads_models:
-            _fail(
-                out,
-                pick,
-                f"{adapter.name} models come in a later version of melo-serve",
-            )
-        elif pick.is_local:
+        elif not adapter.hub_files(pick):
             _fail(out, pick, f"{pick.source} is not a Hugging Face repo to download")
         else:
             jobs.append((pick, adapter))
@@ -292,12 +290,15 @@ def _get(
     if backends is None:
         return CANNOT_START
     sizes: list[int] = []
-    for pick, _ in jobs:
-        try:
-            sizes.append(_hub_bytes(pick.source))
-        except Exception as exc:
-            _fail(out, pick, f"could not read the size of {pick.source}: {exc}")
-            return FAILED
+    for pick, adapter in jobs:
+        size = 0
+        for repo in adapter.hub_files(pick):
+            try:
+                size += _hub_bytes(repo)
+            except Exception as exc:
+                _fail(out, pick, f"could not read the size of {repo.repo}: {exc}")
+                return FAILED
+        sizes.append(size)
     need = sum(
         max(0, size - adapter.cached_bytes(pick, settings))
         for (pick, adapter), size in zip(jobs, sizes, strict=True)
@@ -470,7 +471,7 @@ def _backend(
 
 
 def _download(
-    out: _Out, stop: _Stop, pick: Pick, adapter: Any, settings: Settings, total: int
+    out: _Out, stop: _Stop, pick: Pick, adapter: Adapter, settings: Settings, total: int
 ) -> int:
     item = f"model:{pick.id}"
 
@@ -484,16 +485,18 @@ def _download(
         return f"Stopped at {fit.size_text(finished())} / {fit.size_text(total)}. The {KEPT}."
 
     start, lock = finished(), threading.Lock()
-    seen = {"at": 0.0, "bytes": start}
+    seen = {"at": 0.0, "bytes": start, "came": start}
 
-    def tick() -> None:  # runs in the hub's download threads
+    def tick(came: int) -> None:  # runs in the hub's download threads
         if stop.event.is_set() or out.gone:
             raise _Cancelled
         now = time.monotonic()
         with lock:
+            seen["came"] += came
             if now - seen["at"] < out.every:
                 return
-            seen["at"], done = now, on_disk()
+            # Xet holds gigabytes in memory before it writes: the disk lags behind.
+            seen["at"], done = now, min(total, max(on_disk(), int(seen["came"])))
             if done != seen["bytes"]:  # say nothing when nothing moved
                 seen["bytes"] = done
                 out.running(item, pick.name, done, total)
@@ -504,15 +507,22 @@ def _download(
     stop.line = stopped
     stop.downloading = True
     try:
-        snapshot_download(
-            repo_id=pick.source,
-            cache_dir=str(Path(settings.hf_home) / "hub"),
-            tqdm_class=_progress_class(tick),
-        )
+        for repo in adapter.hub_files(pick):
+            if stop.event.is_set():  # a stop between two repos is the same stop
+                raise _Cancelled
+            snapshot_download(
+                repo_id=repo.repo,
+                allow_patterns=list(repo.files) or None,
+                cache_dir=str(Path(settings.hf_home) / "hub"),
+                tqdm_class=_progress_class(tick),
+            )
     except _Cancelled:
         out.event(item, "failed", stopped())
         return STOPPED
     except Exception as exc:
+        if stop.event.is_set():  # the error of the Xet session that the stop aborted
+            out.event(item, "failed", stopped())
+            return STOPPED
         _fail(out, pick, str(exc), f"the {KEPT}" if finished() > start else NOTHING)
         return FAILED
     finally:

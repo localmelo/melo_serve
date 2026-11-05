@@ -10,6 +10,7 @@ import tomllib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from difflib import get_close_matches
+from fnmatch import fnmatchcase
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,18 @@ class UnknownPick(LookupError):
 
 
 @dataclass(frozen=True)
+class HubRepo:
+    """A Hugging Face repo a pick needs, and which of its files; none means all."""
+
+    repo: str
+    files: tuple[str, ...] = ()
+
+    def matches(self, name: str) -> bool:
+        """Whether the repo file *name* is one this pick needs."""
+        return not self.files or any(fnmatchcase(name, p) for p in self.files)
+
+
+@dataclass(frozen=True)
 class Pick:
     id: str
     name: str
@@ -54,6 +67,9 @@ class Pick:
     min_ram_gb: int | None = None
     args: tuple[str, ...] = ()
     env: Mapping[str, str] = field(default_factory=dict)
+    hub: tuple[
+        HubRepo, ...
+    ] = ()  # what ``get`` downloads, when the backend needs a list
 
     @property
     def is_local(self) -> bool:
@@ -94,6 +110,21 @@ def _optional_number(entry: Mapping[str, Any], key: str, where: str) -> float | 
     return float(value)
 
 
+def _hub_repos(entry: Mapping[str, Any], where: str) -> tuple[HubRepo, ...]:
+    listed = entry.get("hub", [])
+    if not isinstance(listed, list) or not all(isinstance(r, dict) for r in listed):
+        raise CatalogError(f"{where}: hub is not a list of [[pick.hub]] tables")
+    repos = []
+    for item in listed:
+        repo, files = item.get("repo"), item.get("files", [])
+        if not isinstance(repo, str) or "/" not in repo.strip("/"):
+            raise CatalogError(f"{where}: hub repo is not OWNER/REPO")
+        if not isinstance(files, list) or not all(isinstance(f, str) for f in files):
+            raise CatalogError(f"{where}: hub files of {repo} is not a list of strings")
+        repos.append(HubRepo(repo.strip(), tuple(files)))
+    return tuple(repos)
+
+
 def pick_from_dict(entry: Mapping[str, Any], where: str = "pick") -> Pick:
     for key in ("id", "role", "backend", "source"):
         if not isinstance(entry.get(key), str) or not entry[key].strip():
@@ -127,6 +158,7 @@ def pick_from_dict(entry: Mapping[str, Any], where: str = "pick") -> Pick:
         min_ram_gb=int(minimum) if isinstance(minimum, int | float) else None,
         args=tuple(str(a) for a in entry.get("args", ())),
         env={str(k): str(v) for k, v in env.items()},
+        hub=_hub_repos(entry, where),
     )
 
 
