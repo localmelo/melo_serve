@@ -1,10 +1,11 @@
 """The front door: one OpenAI-compatible address in front of the backends.
 
-``/v1/embeddings`` goes to the embedding role and every other path to the chat
-role, as the router it replaces did. Bodies and replies pass through unchanged,
-streamed, except that a request's ``model`` is set to the role's served name (an
-alias or stray spaces still reach the right model) and the backend's key is
-added. ``/v1/models`` lists only what is served.
+``/v1/embeddings`` goes to the embedding role and every other ``/v1`` path to the
+chat role, as the router it replaces did. No other path reaches a backend, so a
+backend's own management API (oMLX's ``/admin``) stays closed. Bodies and replies
+pass through unchanged, streamed, except that a request's ``model`` is set to the
+role's served name (an alias or stray spaces still reach the right model) and the
+backend's key is added. ``/v1/models`` lists only what is served.
 
 aiohttp both serves and relays: in front of one fake backend a minimal aiohttp
 proxy costs 0.31 ms of CPU per request, as much as a plain threaded proxy, where
@@ -82,6 +83,9 @@ async def _body(request: web.Request) -> bytes:
 
 
 async def proxy(engine: Engine, request: web.Request, role: str) -> web.StreamResponse:
+    # The relay sends the raw path, so a backend could resolve /v1/../admin to /admin.
+    if {".", ".."} & set(request.path.split("/")):
+        raise EngineError(404, "not_here", "melo_serve manages models: use melo-serve")
     body = await _body(request)
     payload: Any = None
     if body[:1] == b"{" or "json" in request.content_type:
@@ -194,9 +198,11 @@ def build(engine: Engine) -> web.Application:
     )
     app.router.add_get("/health", health)
     app.router.add_get("/v1/models", models)
+    app.router.add_route("*", "/v1/models", managed)
     app.router.add_get("/melo/v1/state", state)
     app.router.add_post("/v1/embeddings", embeddings)
-    for prefix in ("/v1/models/", "/v1/memory/", "/melo/"):
+    for prefix in ("/v1/models/", "/v1/memory/"):
         app.router.add_route("*", prefix + "{rest:.*}", managed)
-    app.router.add_route("*", "/{rest:.*}", chat)  # registered last: tried last
+    app.router.add_route("*", "/v1/{rest:.*}", chat)
+    app.router.add_route("*", "/{rest:.*}", managed)  # registered last: tried last
     return app
