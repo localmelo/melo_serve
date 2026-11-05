@@ -191,7 +191,7 @@ It answers `{"changed", "generation", "role", "pick", "model", "fit"}`; `changed
 
 | Status | `error.type` | Extra fields |
 |---|---|---|
-| 400 | `bad_request`: no `pick`, or the body is not a JSON object | |
+| 400 | `bad_request`: no `pick`, a field of the wrong type, or the body is not a JSON object | |
 | 404 | `unknown_pick` | `suggestions` |
 | 409 | `busy`: another switch is running | `switch`: its progress |
 | 409 | `stale_generation` | `generation`: the current one |

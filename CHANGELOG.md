@@ -22,6 +22,9 @@ melo_serve has no release yet.
 
 ### Changed
 
+- `POST /switch` on the control socket refuses a field of the wrong type with `400` `bad_request` instead of guessing:
+  `"force": "false"` used to force a load. (#4)
+
 - Only the OpenAI API reaches the models through the front door. A path outside `/v1` that is not melo_serve's own
   (`/health`, `/melo/v1/state`) gets `404` `not_here`, as `/melo/*`, `/v1/models/*` and `/v1/memory/*` did, so
   a backend's own management API, such as oMLX's `/admin/*`, is no longer open to local clients. (#2)

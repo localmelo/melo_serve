@@ -29,6 +29,22 @@ async def _json(request: web.Request) -> dict[str, Any]:
     return body
 
 
+def _optional(
+    body: dict[str, Any], name: str, kind: type | tuple[type, ...], what: str
+) -> Any:
+    """body[name], or None when it is absent; 400 when it has another type.
+
+    A bool is no number here: ``"drain_s": true`` is refused, not read as 1.0.
+    """
+    value = body.get(name)
+    if value is None:
+        return None
+    kinds = kind if isinstance(kind, tuple) else (kind,)
+    if not isinstance(value, kinds) or (isinstance(value, bool) and bool not in kinds):
+        raise EngineError(400, "bad_request", f"{name} must be {what}")
+    return value
+
+
 def build(engine: Engine, stop: Callable[[], None]) -> web.Application:
     async def state(request: web.Request) -> web.StreamResponse:
         return web.json_response(engine.state())
@@ -40,14 +56,18 @@ def build(engine: Engine, stop: Callable[[], None]) -> web.Application:
         body = await _json(request)
         if not isinstance(body.get("pick"), str):
             raise EngineError(400, "bad_request", 'name the pick: {"pick": "27b"}')
-        drain = body.get("drain_s")
+        drain = _optional(body, "drain_s", (int, float), "a number of seconds")
+        generation = _optional(body, "expected_generation", int, "a whole number")
+        force = _optional(body, "force", bool, "true or false")
+        initiator = _optional(body, "initiator", str, "text")
+        reason = _optional(body, "reason", str, "text")
         result = await engine.switch(
             body["pick"],
-            expected_generation=body.get("expected_generation"),
-            drain_s=float(drain) if isinstance(drain, int | float) else None,
-            initiator=str(body.get("initiator") or "user"),
-            reason=str(body.get("reason") or ""),
-            force=bool(body.get("force")),
+            expected_generation=generation,
+            drain_s=float(drain) if drain is not None else None,
+            initiator=initiator or "user",
+            reason=reason or "",
+            force=bool(force),
         )
         return web.json_response(result)
 
