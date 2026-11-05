@@ -1,11 +1,11 @@
 """The front door: one OpenAI-compatible address in front of the backends.
 
 ``/v1/embeddings`` goes to the embedding role and every other ``/v1`` path to the
-chat role, as the router it replaces did. No other path reaches a backend, so its
-own management API (oMLX's ``/admin``) stays closed. Bodies and replies pass through unchanged,
-streamed, except that a request's ``model`` is set to the role's served name (an
-alias or stray spaces still reach the right model) and the backend's key is
-added. ``/v1/models`` lists only what is served.
+chat role, as the router it replaces did. No other path reaches a backend, so a
+backend's own management API (oMLX's ``/admin``) stays closed. Bodies and replies
+pass through unchanged, streamed, except that a request's ``model`` is set to the
+role's served name (an alias or stray spaces still reach the right model) and the
+backend's key is added. ``/v1/models`` lists only what is served.
 
 aiohttp both serves and relays: in front of one fake backend a minimal aiohttp
 proxy costs 0.31 ms of CPU per request, as much as a plain threaded proxy, where
