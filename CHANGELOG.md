@@ -33,4 +33,6 @@ melo_serve has no release yet.
 
 ### Fixed
 
+- `melo-serve install` is safe to run again. It no longer restarts melo_serve (which unloaded the model) when the login item is already installed and unchanged: it says `already installed, skipped`. A new install says `installed ai.localmelo.melo_serve (starts at login)`, and a changed one (a new `PATH` or `HF_HOME`) says the daemon restarted. (#8)
+
 - A client that connects to the control socket and leaves at once no longer leaves a traceback in the daemon log. (#6)

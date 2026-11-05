@@ -312,13 +312,19 @@ def cmd_install(
     if client.running() and not launchd.status()["installed"]:
         client.stop()  # the login service takes over from this daemon
         _wait(lambda: not client.running(), 180)
-    path = launchd.install()
+    result = launchd.install()
+    if result == "unchanged":
+        print("already installed, skipped")
+        return 0
     if not _wait(client.running, 20):
         print(
-            f"The login item is installed ({path}), but melo_serve did not start; see melo-serve doctor"
+            f"The login item is installed ({launchd.plist_path()}), but melo_serve did not start; see melo-serve doctor"
         )
         return 1
-    print(f"melo_serve now starts at login ({path}).")
+    if result == "updated":
+        print(f"updated {launchd.LABEL} (settings changed); the daemon restarted")
+    else:
+        print(f"installed {launchd.LABEL} (starts at login)")
     return 0
 
 
