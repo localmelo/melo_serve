@@ -13,12 +13,15 @@ import ctypes
 import os
 import platform
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 from melo_serve.catalog import Pick
 
 GIB = 1024**3
+MARGIN_BYTES = 5 * GIB  # kept free on the cache's volume on top of the downloads
 SAME_CLASS_GB = 8  # Macs within this much memory of each other count as one class
 
 FITS = "fits"  # leaves at least the floor that other heavy work needs
@@ -58,6 +61,17 @@ class Fit:
             "measured": self.measured,
             "reason": self.reason,
         }
+
+
+def free_bytes(path: Path) -> int:
+    """Free space on the volume *path* is, or would be, on."""
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return shutil.disk_usage(path).free
+
+
+def size_text(count: int) -> str:
+    return f"{count / GIB:.1f} GB" if count >= GIB else f"{count / 1e6:.0f} MB"
 
 
 def total_ram_bytes() -> int | None:

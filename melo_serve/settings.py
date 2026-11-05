@@ -27,7 +27,9 @@ needs (``hf_home``, a backend's ``command``) belongs here.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shlex
 import tomllib
 from collections.abc import Mapping, Sequence
@@ -216,3 +218,38 @@ def load(path: Path | None = None, overrides: Sequence[str] = ()) -> Settings:
     for item in overrides:
         _override(data, item)
     return from_dict(data)
+
+
+def save_hf_home(value: str, path: Path | None = None) -> None:
+    """Set ``hf_home`` in ``config.toml``, keeping every other line as it is.
+
+    The key goes before the first table, since a key after ``[picks]`` would belong
+    to it. The new text must parse to the old settings plus ``hf_home``; else the
+    file is left alone.
+    """
+    path = paths.config_path() if path is None else path
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    lines = text.splitlines()
+    top = next(
+        (i for i, line in enumerate(lines) if line.lstrip().startswith("[")), len(lines)
+    )
+    entry = f"hf_home = {json.dumps(value)}"
+    for i in range(top):
+        if re.match(r"\s*hf_home\s*=", lines[i]):
+            lines[i] = entry
+            break
+    else:
+        lines[top:top] = [entry, ""] if top < len(lines) else [entry]
+    new = "\n".join(lines) + "\n"
+    try:
+        ok = tomllib.loads(new) == {**tomllib.loads(text), "hf_home": value}
+    except tomllib.TOMLDecodeError:
+        ok = False
+    if not ok:
+        raise SettingsError(f"{path}: could not set hf_home safely; set it by hand")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + ".new")
+    temp.write_text(new, encoding="utf-8")
+    if path.exists():
+        os.chmod(temp, path.stat().st_mode & 0o777)
+    os.replace(temp, path)

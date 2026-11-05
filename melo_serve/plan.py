@@ -16,14 +16,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from melo_serve import fit
+from melo_serve import fit, paths
 from melo_serve.adapters.base import Adapter, Install, InstallPlan
 from melo_serve.catalog import Catalog, Pick
-from melo_serve.fit import GIB
+from melo_serve.fit import GIB, MARGIN_BYTES, size_text
 from melo_serve.settings import Settings
 
 SCHEMA = "melo_serve.plan/1"
-MARGIN_BYTES = 5 * GIB  # kept free on the cache's volume on top of the downloads
 BREW = "/opt/homebrew/bin/brew"
 
 
@@ -50,20 +49,6 @@ def _run(*argv: str) -> str:
     return out.stdout.strip()
 
 
-def _tilde(path: str) -> str:
-    home = str(Path.home())
-    return (
-        "~" + path[len(home) :] if path == home or path.startswith(home + "/") else path
-    )
-
-
-def _free_bytes(path: Path) -> int:
-    """Free space on the volume *path* is, or would be, on."""
-    while not path.exists() and path != path.parent:
-        path = path.parent
-    return shutil.disk_usage(path).free
-
-
 def probe_machine(settings: Settings) -> Machine:
     ram = fit.total_ram_bytes()
     hf_home = settings.resolved_hf_home()
@@ -73,8 +58,8 @@ def probe_machine(settings: Settings) -> Machine:
         ram_gb=round(ram / GIB) if ram else None,
         macos=_run("sw_vers", "-productVersion"),
         macos_build=_run("sw_vers", "-buildVersion"),
-        free_gb=round(_free_bytes(Path(hf_home) / "hub") / GIB, 1),
-        hf_home=_tilde(hf_home),
+        free_gb=round(fit.free_bytes(Path(hf_home) / "hub") / GIB, 1),
+        hf_home=paths.tilde(hf_home),
         hf_home_from=settings.hf_home_source(),
         homebrew=bool(shutil.which("brew")) or Path(BREW).exists(),
     )
@@ -220,10 +205,6 @@ FIT_WORDS = {
 }
 
 
-def _size(count: int) -> str:
-    return f"{count / GIB:.1f} GB" if count >= GIB else f"{count / 1e6:.0f} MB"
-
-
 def render(plan: Mapping[str, Any], backend_names: Mapping[str, str]) -> str:
     """The short summary for a terminal."""
     machine = plan["machine"]
@@ -248,9 +229,9 @@ def render(plan: Mapping[str, Any], backend_names: Mapping[str, str]) -> str:
         if item["state"] == "done":
             note = "already there"
         elif cached:
-            note = f"{_size(item['size_bytes'])}, {_size(cached)} already downloaded"
+            note = f"{size_text(item['size_bytes'])}, {size_text(cached)} already downloaded"
         else:
-            note = _size(item["size_bytes"])
+            note = size_text(item["size_bytes"])
         via = {"homebrew": "Homebrew", "dmg": "DMG", "huggingface": "Hugging Face"}[
             item["via"]
         ]
@@ -262,7 +243,7 @@ def render(plan: Mapping[str, Any], backend_names: Mapping[str, str]) -> str:
             "" if plan["enough_disk"] else " That is more than fits with 5 GB to spare."
         )
         lines.append(
-            f"Download about {_size(plan['download_bytes'])}; {machine['free_gb']:.0f} GB free "
+            f"Download about {size_text(plan['download_bytes'])}; {machine['free_gb']:.0f} GB free "
             f"in {machine['hf_home']} (from {machine['hf_home_from']}).{disk}"
         )
     if plan["alternatives"]:
