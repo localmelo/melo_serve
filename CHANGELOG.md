@@ -20,6 +20,8 @@ melo_serve has no release yet.
   served models and whether each is loaded, in oMLX's shape, so a client such as localmelo can turn pictures on for
   the models that read them. Each role in the state names its backend for display (`backend_name`). (#4)
 
+- `melo-serve plan [--json]` shows what a first run would set up on this Mac: the chip, memory, macOS, free space where the Hugging Face cache is, the recommended chat model with its backend, the embedding model, what is already there, the size of the download and whether the disk has room. It only reads. The JSON (`melo_serve.plan/1`) is described in the README for client authors. (#10)
+
 ### Changed
 
 - `POST /switch` on the control socket refuses a field of the wrong type with `400` `bad_request` instead of guessing:

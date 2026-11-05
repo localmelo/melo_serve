@@ -39,6 +39,7 @@ Then point any OpenAI-compatible client at `http://127.0.0.1:8321/v1`.
 | `use <pick> [-n] [-y]` | switch; `-n` does not wait for requests in flight, `-y` loads even if it does not fit |
 | `up [pick] [-f] [-p port]` | start melo_serve; `-f` stays in the foreground |
 | `stop` | stop the models and melo_serve |
+| `plan [--json]` | what a first run would install here and how big it is; reads only |
 | `doctor` | backends, the login item and memory |
 | `install`, `uninstall` | add or remove the login item |
 
@@ -144,6 +145,36 @@ A request that finds its model unloaded starts it, and can fail with the load er
 The values are illustrative. A role is `null` when no pick is chosen. The top-level `status` is `ready`, `switching`, `degraded` or `stopped`; a role's is `stopped`, `starting`, `ready` or `failed` (then `error` says why). `dims` is the embedding size (else `null`). `backend_name` is the display name of `backend` (`Splash`, `oMLX`). `retired` lists the served names that now get `model_switched`. `switch` is `null`, or `{"pick", "role", "phase", "load_s", "since"}` while a switch runs; `phase` is `checking`, `draining`, `stopping`, `loading` or `rolling back`.
 
 `generation` starts at 0, survives restarts, and goes up by one each time a switch finishes loading a model. A switch to what is already served and ready, a failed switch and a load on demand leave it as it is.
+
+### Plan
+
+`melo-serve plan --json` prints what a first run would set up on this Mac, so a client can show one list and ask for one OK. It only reads: no network, no writes, nothing is started or installed. Without `--json` it prints a short summary.
+
+```json
+{
+  "schema": "melo_serve.plan/1",
+  "machine": {"chip": "Apple M5 Max", "arch": "arm64", "ram_gb": 128, "macos": "27.2", "macos_build": "26B123",
+              "free_gb": 83.0, "hf_home": "~/Developer/ml_source/huggingface", "hf_home_from": "env", "homebrew": true},
+  "supported": true, "reason": "", "reason_hint": "",
+  "pick": {"id": "qwen3.8-27b-splash", "name": "Qwen3.8 27B", "backend": "splash", "fit": "estimate"},
+  "items": [
+    {"id": "backend:omlx", "kind": "backend", "name": "oMLX 0.7.3", "via": "dmg", "size_bytes": 881239063,
+     "dest": "~/Applications/oMLX.app", "state": "todo", "sha256": "2acfde41…", "file": "oMLX-0.7.3-macos26-27.dmg"},
+    {"id": "model:qwen3.8-27b-splash", "kind": "model", "name": "Qwen3.8 27B", "via": "huggingface", "size_bytes": 22764000000,
+     "dest": "~/Developer/ml_source/huggingface", "state": "partial", "role": "chat", "cached_bytes": 14100000000}
+  ],
+  "download_bytes": 9545239063, "enough_disk": true,
+  "alternatives": [{"id": "qwen3-8b-omlx", "name": "Qwen3 8B", "backend": "omlx"}]
+}
+```
+
+[`tests/fixtures/plan.v1.json`](tests/fixtures/plan.v1.json) is a complete example, and a test keeps the real output to its keys and types.
+
+- `machine.hf_home_from` says where the cache folder comes from: `config` (the `hf_home` setting), `env` (`HF_HOME`) or `default`. `free_gb` is the free space on the cache's volume. Paths are shown with `~`.
+- `supported` is `false` when no pick can run: an Intel Mac, less memory than the smallest model needs, a macOS no backend supports, or nothing that fits the free memory now. `reason` then says why, in one line, and `pick` is `null`. `reason_hint` is set when something would help: with no Homebrew, the Splash models drop out and it says installing Homebrew would allow them.
+- `pick` is the first chat pick, in `picks.toml` order, that fits the Mac's memory (`min_ram_gb`), whose backend can run on this macOS, and that the fit check accepts. Splash needs macOS 26.4 or later and Homebrew; oMLX needs macOS 15, or 26 and later. `alternatives` are the other chat picks that pass the same checks.
+- `items` are the pick's backend, the embedding model's backend (when it differs), the chat model and the embedding model, each with a `state` of `done`, `partial` (`cached_bytes` is what is already in the cache) or `todo`. `size_bytes` of a model is the catalog's `disk_gb`.
+- `download_bytes` adds up the items not `done`, less `cached_bytes`. `enough_disk` is `free_gb` of the cache's volume at least that plus 5 GiB.
 
 ### Control socket
 
