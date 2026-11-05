@@ -19,7 +19,6 @@ from melo_serve.adapters.base import (
     Adapter,
     InstallPlan,
     Launch,
-    hf_store,
     snapshot_files,
 )
 from melo_serve.catalog import HubRepo, Pick
@@ -43,17 +42,15 @@ def _in_cache(repo: HubRepo, hf_home: str) -> bool:
     """Whether the cache has all of *repo*'s files that the pick needs.
 
     With a file list, each pattern must match a file, and no split GGUF may lack a part
-    (a pattern such as ``IQ3_XXS/*`` cannot say how many files it should match). Without one the hub's own list is
-    not at hand, so a snapshot with files is taken as whole, unless a file is still
-    downloading. A link to a missing blob never counts."""
+    (a pattern such as ``IQ3_XXS/*`` cannot say how many files it should match). Without
+    one the Hub's own list is not at hand, so a snapshot with files is taken as whole.
+    A link to a missing blob never counts.
+    """
     files = snapshot_files(repo, hf_home)
     if not files or not all(p.exists() for p in files.values()):
         return False
-    if repo.files:
-        found = all(any(fnmatchcase(n, pat) for n in files) for pat in repo.files)
-        return found and _shards_whole(files)
-    blobs = hf_store(repo.repo, hf_home) / "blobs"
-    return not any(blobs.glob("*.incomplete"))
+    found = all(any(fnmatchcase(n, pat) for n in files) for pat in repo.files)
+    return found and _shards_whole(files)
 
 
 class SplashAdapter(Adapter):

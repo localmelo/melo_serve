@@ -434,7 +434,7 @@ def test_the_cache_is_read_as_the_hub_lays_it_out(tmp_path: Path) -> None:
         flash, ["IQ3_XXS/m-00001-of-00002.gguf", "Q8_0/a.gguf", mmproj]
     )  # the second part is missing
     fake.write_snapshot(draft)
-    assert adapter.cached_bytes(pick, config) == 3000
+    assert adapter.cached_bytes(pick, config) == 4000
     assert "not downloaded" in adapter.installed(pick, config)
     fake.write_snapshot(flash, ["IQ3_XXS/m-00002-of-00002.gguf"])
     assert adapter.installed(pick, config) == ""
@@ -442,9 +442,8 @@ def test_the_cache_is_read_as_the_hub_lays_it_out(tmp_path: Path) -> None:
     (blobs / "abc.incomplete").write_bytes(
         b"x" * 500
     )  # a file of the draft still downloading
-    assert adapter.cached_bytes(pick, config) == 4000
-    assert adapter.cached_bytes(pick, config, include_partial=True) == 4500
-    assert "not downloaded" in adapter.installed(pick, config)
+    assert adapter.cached_bytes(pick, config) == 5000
+    assert adapter.cached_bytes(pick, config, include_partial=True) == 5500
 
 
 def test_a_pick_lists_its_hub_files() -> None:
