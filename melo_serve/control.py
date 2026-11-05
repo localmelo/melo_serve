@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -57,6 +58,8 @@ def build(engine: Engine, stop: Callable[[], None]) -> web.Application:
         if not isinstance(body.get("pick"), str):
             raise EngineError(400, "bad_request", 'name the pick: {"pick": "27b"}')
         drain = _optional(body, "drain_s", (int, float), "a number of seconds")
+        if drain is not None and not (math.isfinite(drain) and drain >= 0):
+            raise EngineError(400, "bad_request", "drain_s must be a number of seconds")
         generation = _optional(body, "expected_generation", int, "a whole number")
         force = _optional(body, "force", bool, "true or false")
         initiator = _optional(body, "initiator", str, "text")

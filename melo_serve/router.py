@@ -192,7 +192,7 @@ def build(engine: Engine) -> web.Application:
 
     async def status(request: web.Request) -> web.StreamResponse:
         """oMLX's model status: what localmelo reads to find the loaded models."""
-        models = [
+        entries = [
             {
                 "id": pick.served_name,
                 "model_alias": pick.short,
@@ -205,7 +205,7 @@ def build(engine: Engine) -> web.Application:
             }
             for role, pick, loaded, vision in listed(engine)
         ]
-        return web.json_response({"models": models})
+        return web.json_response({"models": entries})
 
     async def state(request: web.Request) -> web.StreamResponse:
         return web.json_response(engine.state())

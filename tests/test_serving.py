@@ -102,6 +102,9 @@ async def test_refused_or_failed_switches_keep_the_model(tmp_path: Path) -> None
         with pytest.raises(ControlError) as wrong_type:
             await asyncio.to_thread(client.switch, "b", force="false")
         assert wrong_type.value.kind == "bad_request"
+        with pytest.raises(ControlError) as not_finite:
+            await asyncio.to_thread(client.switch, "b", drain_s=float("nan"))
+        assert not_finite.value.kind == "bad_request"
 
         chat = (await asyncio.to_thread(client.state))["roles"]["chat"]
         assert (chat["pick"], chat["status"], engine.generation) == (
