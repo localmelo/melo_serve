@@ -56,6 +56,11 @@ class Pick:
     env: Mapping[str, str] = field(default_factory=dict)
 
     @property
+    def is_local(self) -> bool:
+        """Whether the model is a folder on this Mac, not a Hugging Face repo."""
+        return self.source.startswith(("/", "~", "."))
+
+    @property
     def short(self) -> str:
         """The name to type: the first alias, else the id."""
         return self.aliases[0] if self.aliases else self.id

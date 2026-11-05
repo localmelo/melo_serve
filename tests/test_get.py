@@ -6,6 +6,9 @@ import fcntl
 import json
 import os
 import signal
+import stat
+import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -64,6 +67,7 @@ def hub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[FakeHub, Path]
     fake = FakeHub(hf)
     monkeypatch.setenv("HF_HOME", str(hf))
     monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    monkeypatch.setenv("HF_HUB_DISABLE_TELEMETRY", "0")  # get must switch it off
     monkeypatch.setattr(get, "PROGRESS_EVERY", 0)
     monkeypatch.setattr(fit, "free_bytes", lambda path: 100 * fit.GIB)
     monkeypatch.setattr(huggingface_hub, "HfApi", lambda: fake)
@@ -81,7 +85,7 @@ def run_get(
 
 
 def test_a_download_reports_progress_and_remembers_the_cache(
-    hub: tuple[FakeHub, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    hub: tuple[FakeHub, Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake, hf = hub
     paths.config_path().parent.mkdir(parents=True)
@@ -99,7 +103,12 @@ def test_a_download_reports_progress_and_remembers_the_cache(
     }  # fmt: skip
     config = settings.load()
     assert (config.hf_home, config.port, config.chat) == (str(hf), 8999, "27b")
-    assert not (tmp_path / "project").exists()  # the cache is the only place written
+    assert os.environ["HF_HUB_DISABLE_TELEMETRY"] == "1"  # no agent name, no dotfile
+    code, events, _ = run_get(capsys, "--json")  # again: the model is there
+    assert code == 0 and fake.calls == [REPO]
+    assert [(e["state"], e["line"]) for e in events] == [
+        ("skipped", "already downloaded, skipped")
+    ]
 
 
 def test_a_complete_model_is_skipped_and_a_new_cache_folder_is_remembered(
@@ -126,7 +135,7 @@ def test_a_complete_model_is_skipped_and_a_new_cache_folder_is_remembered(
     assert code == 2 and out.startswith("failed: HF_HUB_CACHE is ")
 
 
-def test_too_little_disk_is_refused_before_anything_is_written(
+def test_too_little_disk_is_refused_before_anything_is_downloaded(
     hub: tuple[FakeHub, Path],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -137,7 +146,7 @@ def test_too_little_disk_is_refused_before_anything_is_written(
     assert code == 2 and fake.calls == []
     assert events[0]["line"] == (
         "failed: not enough space: needs 6.0 GB and 5 GB to spare, 11.0 GB free in "
-        f"{hf / 'hub'}; free some space, or use --hf-home PATH; nothing was changed"
+        f"{hf / 'hub'}; free some space, or use --hf-home PATH; nothing was downloaded"
     )
     assert not hf.exists() and not paths.config_path().exists()
 
@@ -157,22 +166,91 @@ def test_a_second_download_waits_its_turn(
     assert hub[0].calls == []
 
 
-def test_stopping_keeps_the_files_finished_and_says_how_to_continue(
-    hub: tuple[FakeHub, Path], capsys: pytest.CaptureFixture[str]
+def test_stopping_aborts_the_xet_session_and_says_how_to_continue(
+    hub: tuple[FakeHub, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    fake, hf = hub
-
-    def cancel(bar: Any) -> None:
-        (hf / "hub" / "models--x" / "blobs").mkdir(parents=True)
-        (hf / "hub" / "models--x" / "blobs" / "done").write_bytes(b"x" * 100)
-        os.kill(os.getpid(), signal.SIGTERM)
-        bar.update(1)  # the next chunk: the hub's thread notices and stops
-
-    fake.behaviour = cancel
-    code, events, _ = run_get(capsys, "--json")
-    assert code == 130
-    assert events[-1]["line"] == (
-        "Stopped at 0.0 / 6.0 GB. Run the same command again to continue."
+    fake, _ = hub
+    aborted: list[int] = []
+    monkeypatch.setattr(
+        "huggingface_hub.utils._xet.abort_xet_session", lambda: aborted.append(1)
     )
-    assert (hf / "hub" / "models--x" / "blobs" / "done").exists()
-    assert not list(hf.glob("hub/models--mlx*"))  # nothing was declared complete
+
+    def signal_while_a_thread_downloads(bar: Any) -> None:
+        errors: list[BaseException] = []
+        started = threading.Event()
+
+        def worker() -> None:  # like the hub's download threads
+            try:
+                for _ in range(5000):
+                    bar.update(1)
+                    started.set()
+                    time.sleep(0.001)
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        started.wait(5)
+        os.kill(os.getpid(), signal.SIGTERM)
+        thread.join(10)
+        raise errors[0]  # as the hub does with a failed file
+
+    fake.behaviour = signal_while_a_thread_downloads
+    code, events, _ = run_get(capsys, "--json")
+    assert code == 130 and aborted == [1]
+    assert events[-1]["line"] == (
+        "Stopped at 0 MB / 6.0 GB. The finished files are kept; "
+        "run the same command again to download the rest."
+    )
+
+
+def test_a_symlinked_config_is_written_through(tmp_path: Path) -> None:
+    real, link = tmp_path / "dotfiles" / "config.toml", tmp_path / "config.toml"
+    real.parent.mkdir()
+    real.write_bytes(b"port = 8999\r\n# the picks\r\n[picks]\r\nchat = '27b'\r\n")
+    real.chmod(0o600)
+    link.symlink_to(real)
+    settings.save_hf_home("/tmp/models \U0001f600", link)
+    assert link.is_symlink() and stat.S_IMODE(real.stat().st_mode) == 0o600
+    assert real.read_bytes().startswith(
+        b'port = 8999\r\n# the picks\r\nhf_home = "/tmp/models'
+    )
+    config = settings.load(link)
+    assert (config.hf_home, config.chat) == ("/tmp/models \U0001f600", "27b")
+
+
+def test_the_cache_folder_is_made_absolute_and_a_bad_home_is_refused(
+    hub: tuple[FakeHub, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake, _ = hub
+    fake.hf = tmp_path / "rel" / "x"
+    fake.write_snapshot()
+    monkeypatch.chdir(tmp_path)
+    code, _, _ = run_get(capsys, "--hf-home", "rel/x")
+    assert code == 0 and settings.load().hf_home == str(tmp_path / "rel" / "x")
+    code, _, out = run_get(capsys, "--hf-home", "~nosuchuser-zz/x")
+    assert code == 2 and out == (
+        "failed: ~nosuchuser-zz/x: there is no such home folder; nothing was downloaded\n"
+    )
+
+
+def test_a_splash_model_that_is_not_there_is_refused(
+    hub: tuple[FakeHub, Path],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    paths.config_path().parent.mkdir(parents=True)
+    paths.config_path().write_text(
+        f'[backends.splash]\nmodels_dir = "{tmp_path}/splash"\n'
+    )
+    code = cli.main(["get", "27b"])
+    assert code == 2 and capsys.readouterr().out == (
+        "Qwen3.8 27B: failed: Splash models come in a later version of melo-serve; "
+        "nothing was downloaded\n"
+    )
+    assert hub[0].calls == []

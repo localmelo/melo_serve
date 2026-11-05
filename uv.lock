@@ -838,7 +838,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10" },
-    { name = "huggingface-hub", specifier = ">=2.4.0" },
+    { name = "huggingface-hub", specifier = ">=2.4.0,<3" },
     { name = "yarl", specifier = ">=1.9" },
 ]
 

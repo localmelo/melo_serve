@@ -67,7 +67,7 @@ def omlx_installed_4b_done_embed_cut_short(tmp: Path) -> None:
     (snapshot.parents[1] / "refs/main").write_text("rev")
     blobs = tmp / "hf/hub" / EMBED_REPO / "blobs"
     blobs.mkdir(parents=True)
-    (blobs / "abc.incomplete").write_bytes(b"x" * 1000)
+    (blobs / "abc").write_bytes(b"x" * 1000)
 
 
 CASES: list[dict[str, Any]] = [

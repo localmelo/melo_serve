@@ -87,7 +87,15 @@ class Settings:
 
     def resolved_hf_home(self) -> str:
         value = self.hf_home or os.environ.get("HF_HOME") or "~/.cache/huggingface"
-        return str(Path(value).expanduser())
+        return absolute_path(value)
+
+
+def absolute_path(value: str) -> str:
+    """*value* with ``~`` expanded and made absolute (a daemon has another cwd)."""
+    expanded = os.path.expanduser(value)
+    if expanded.startswith("~"):
+        raise SettingsError(f"{value}: there is no such home folder")
+    return os.path.abspath(expanded)
 
 
 def parse_duration(value: Any, key: str = "duration") -> float:
@@ -225,22 +233,29 @@ def save_hf_home(value: str, path: Path | None = None) -> None:
 
     The key goes before the first table, since a key after ``[picks]`` would belong
     to it. The new text must parse to the old settings plus ``hf_home``; else the
-    file is left alone.
+    file is left alone. A symlinked file is written through, and its mode and line
+    endings stay.
     """
-    path = paths.config_path() if path is None else path
-    text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    lines = text.splitlines()
+    path = Path(os.path.realpath(paths.config_path() if path is None else path))
+    text = ""
+    if path.is_file():
+        with open(path, encoding="utf-8", newline="") as handle:
+            text = handle.read()
+    eol = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(eol)
+    if lines[-1] == "":
+        lines.pop()
     top = next(
         (i for i, line in enumerate(lines) if line.lstrip().startswith("[")), len(lines)
     )
-    entry = f"hf_home = {json.dumps(value)}"
+    entry = f"hf_home = {json.dumps(value, ensure_ascii=False)}"
     for i in range(top):
         if re.match(r"\s*hf_home\s*=", lines[i]):
             lines[i] = entry
             break
     else:
         lines[top:top] = [entry, ""] if top < len(lines) else [entry]
-    new = "\n".join(lines) + "\n"
+    new = eol.join(lines) + eol
     try:
         ok = tomllib.loads(new) == {**tomllib.loads(text), "hf_home": value}
     except tomllib.TOMLDecodeError:
@@ -248,8 +263,12 @@ def save_hf_home(value: str, path: Path | None = None) -> None:
     if not ok:
         raise SettingsError(f"{path}: could not set hf_home safely; set it by hand")
     path.parent.mkdir(parents=True, exist_ok=True)
+    mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
     temp = path.with_name(path.name + ".new")
-    temp.write_text(new, encoding="utf-8")
-    if path.exists():
-        os.chmod(temp, path.stat().st_mode & 0o777)
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+        os.fchmod(handle.fileno(), mode)
+        handle.write(new)
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temp, path)

@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.10",
-    "huggingface-hub>=2.4.0",
+    "huggingface-hub>=2.4.0,<3",
     "yarl>=1.9",
 ]
 

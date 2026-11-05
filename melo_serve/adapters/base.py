@@ -106,8 +106,12 @@ class Adapter(abc.ABC):
         Both backends need Apple silicon, which ``melo-serve plan`` checks once.
         """
 
-    def cached_bytes(self, pick: Pick, settings: Settings) -> int:
-        """Bytes of *pick*'s model already downloaded, even if cut short; 0 if unknown."""
+    def cached_bytes(
+        self, pick: Pick, settings: Settings, include_partial: bool = False
+    ) -> int:
+        """Bytes of *pick*'s model already downloaded; 0 if unknown.
+
+        Finished files only, unless *include_partial*: a file still downloading."""
         return 0
 
     def auth(self, key: str) -> dict[str, str]:
