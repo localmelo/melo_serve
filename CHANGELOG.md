@@ -28,11 +28,11 @@ melo_serve has no release yet.
 - `melo-serve get <pick…> [--json] [--hf-home PATH]` downloads the models of some picks into the Hugging Face cache
   (`<hf_home>/hub`, never a project folder; `HF_HOME` is respected). oMLX models are downloaded; a Splash model comes in a
   later version, and `get` says so. A model already there is skipped, so every run is safe to repeat. It checks the
-  exact size with Hugging Face and refuses, writing nothing, when the cache's volume would have less than 5 GiB left.
+  exact size with Hugging Face and refuses, downloading nothing, when the cache's volume would have less than 5 GiB left.
   It saves `hf_home` in `config.toml` when the file has none (or sets it from `--hf-home`), keeping the rest of the
   file. One `get` runs at a time (a second says `another download is running (pid N)` and exits 75), and Ctrl-C or
-  SIGTERM stops it with exit 130, keeping the files it had finished. `--json` prints the progress as JSON lines for
-  clients. melo_serve now depends on `huggingface_hub`, imported only by `get`. The version is 0.2.0, the first
+  SIGTERM stops it with exit 130 (a second one exits at once), keeping the files it had finished; a file cut short starts again, as the Hub does not resume inside a file across runs. `get` turns the Hub's telemetry off for itself, and `~` and relative cache paths are made absolute. `--json` prints the progress as JSON lines for
+  clients. melo_serve now depends on `huggingface_hub` (2.4 up to 3, with its transfer layer `hf-xet` and a few more packages), imported only by `get`. The version is 0.2.0, the first
   with `plan` and `get`. (#12)
 
 ### Changed
