@@ -48,7 +48,7 @@ Then point any OpenAI-compatible client at `http://127.0.0.1:8321/v1`.
 
 A pick is a model on a backend, with a short name: `27b`, `flash-next`, `8b`, `4b`
 and `embed` are built in. A `picks.toml` in `~/.cache/melo_serve` adds models of
-your own, in the same format as [the built-in list](melo_serve/picks.toml).
+your own, in the same format as [the built-in list](melo_serve/picks.toml). An entry with a built-in id replaces that pick whole, aliases and sizes included, because a changed source makes the built-in sizes wrong; give such an entry every field you want.
 
 ## Settings
 
@@ -73,6 +73,7 @@ after_stop = "~/bin/after-stop"
 - A request that names a model no longer served gets `409` with `{"error": {"type": "model_switched", "current": "<id>"}}`; nothing is answered by a model the client did not ask for.
 - During a switch, new requests for that model get `503` with `Retry-After`.
 - What is served, and a `generation` that counts the switches, are in `~/.cache/melo_serve/state.json` and at `GET /melo/v1/state`.
+- Only `/v1` paths reach the models (`/v1/embeddings` the embedding model, the rest the chat model); any other path that is not melo_serve's own gets `404` `not_here`, so a backend's admin API stays closed.
 - Control (switch, start, stop) goes through a Unix socket that only your user can open: `~/.cache/melo_serve/control.sock`.
 
 ## Development
