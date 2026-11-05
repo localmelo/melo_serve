@@ -152,7 +152,7 @@ async def _relay(
 
 
 def listed(engine: Engine) -> Iterator[tuple[str, Pick, bool, bool]]:
-    """What is served: the role, the pick, whether it is loaded and whether it reads pictures."""
+    """What is served: the role, the pick, whether it is loaded, whether it sees."""
     for slot, pick in engine.served():
         yield slot.role, pick, slot.loaded and slot.ready(), "vision" in pick.caps
 
