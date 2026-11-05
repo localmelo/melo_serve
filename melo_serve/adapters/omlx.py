@@ -83,6 +83,7 @@ class OmlxAdapter(Adapter):
     install_hint = "melo-serve get <pick> installs it"
     tested_versions = ("0.7.",)
     known_paths = (APP_CLI, USER_APP_CLI)
+    downloads_models = True
 
     def install_plan(self, macos: tuple[int, ...]) -> InstallPlan | None:
         """The pinned DMG for this macOS: 15, or 26 and later; none for older."""

@@ -63,6 +63,7 @@ class Adapter(abc.ABC):
     name = ""
     default_command: tuple[str, ...] = ()
     known_paths: tuple[str, ...] = ()  # where it lives when PATH does not reach it
+    downloads_models = False  # ``melo-serve get`` can download this backend's models
     install_hint = ""
     tested_versions: tuple[str, ...] = ()
     ready_path = "/health"  # answers 200 once requests are served

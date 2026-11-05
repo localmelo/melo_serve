@@ -41,7 +41,8 @@ melo_serve has no release yet.
   from `brew install incoai/tap/splash`, and Homebrew must already be there. A backend already installed, at any
   version, is left alone. A stopped DMG download continues from where it stopped. The free-space check also counts the
   DMG and the app on the home volume, and the JSON has a new `item`, `backend:<key>`. A Splash pick whose model is
-  not on this Mac is still refused unless `model:<id>` is skipped. (#14)
+  not on this Mac is still refused unless `model:<id>` is skipped, so `plan` recommends such a pick only when its model is
+  there, and each model item of the plan names its `backend`. (#14)
 
 ### Changed
 

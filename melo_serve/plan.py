@@ -121,7 +121,7 @@ def _model_item(
     item = _item(
         "model", pick.id, pick.name, "huggingface", size, machine.hf_home, state
     )
-    item["role"] = pick.role
+    item.update(role=pick.role, backend=pick.backend)
     if state == "partial":
         item["cached_bytes"] = cached
     return item
@@ -168,6 +168,11 @@ def build(
     limits = {"floor_pct": settings.floor_pct, "min_pct": settings.min_pct}
     no_brew: list[Pick] = []  # fit this Mac's memory, and lack only Homebrew
 
+    def gettable(pick: Pick) -> bool:
+        """``get`` can finish it: it downloads such models, or this one is here."""
+        adapter = adapters[pick.backend]
+        return adapter.downloads_models or not adapter.installed(pick, settings)
+
     def runs_here(pick: Pick) -> bool:
         install = plans.get(pick.backend)
         if install is None or (pick.min_ram_gb or 0) > (machine.ram_gb or 0):
@@ -181,8 +186,10 @@ def build(
             return False
         return True
 
-    chats = [p for p in catalog.for_role("chat") if runs_here(p)]
-    embedders = [p for p in catalog.for_role("embedding") if runs_here(p)]
+    chats = [p for p in catalog.for_role("chat") if gettable(p) and runs_here(p)]
+    embedders = [
+        p for p in catalog.for_role("embedding") if gettable(p) and runs_here(p)
+    ]
     if no_brew:
         names = " and ".join(p.name for p in no_brew if p.role == "chat")
         if names:

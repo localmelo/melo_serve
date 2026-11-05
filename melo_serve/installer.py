@@ -272,10 +272,10 @@ def install_app(
     dmg = download(plan, progress)
     note("checked the size and sha256 of the download")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    _remove(new)  # left by a stop
     mount = paths.home() / "dmg"
-    if os.path.ismount(mount):
+    if os.path.ismount(mount):  # first: this also ends a copy that outlived its run
         _detach(mount)
+    _remove(new)  # left by a stop
     mount.mkdir(exist_ok=True)
     copied = False
     try:

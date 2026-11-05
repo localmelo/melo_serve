@@ -41,7 +41,6 @@ from melo_serve.catalog import Pick
 from melo_serve.settings import Settings
 
 OK, FAILED, CANNOT_START, BUSY, STOPPED = 0, 1, 2, 75, 130
-DOWNLOADS = ("omlx",)  # backends whose models this command downloads
 PROGRESS_EVERY = (
     0.5  # seconds between two JSON progress events; text waits 10 times as long
 )
@@ -277,9 +276,13 @@ def _get(
             skipped.append((pick, CHOSEN))
         elif not adapter.installed(pick, settings):
             skipped.append((pick, "already downloaded, skipped"))
-        elif pick.backend == "splash":
-            _fail(out, pick, "Splash models come in a later version of melo-serve")
-        elif pick.backend not in DOWNLOADS or pick.is_local:
+        elif not adapter.downloads_models:
+            _fail(
+                out,
+                pick,
+                f"{adapter.name} models come in a later version of melo-serve",
+            )
+        elif pick.is_local:
             _fail(out, pick, f"{pick.source} is not a Hugging Face repo to download")
         else:
             jobs.append((pick, adapter))

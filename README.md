@@ -162,7 +162,7 @@ The values are illustrative. A role is `null` when no pick is chosen. The top-le
     {"id": "backend:omlx", "kind": "backend", "name": "oMLX 0.7.3", "via": "dmg", "size_bytes": 881239063,
      "dest": "~/Applications/oMLX.app", "state": "todo", "sha256": "2acfde41…", "file": "oMLX-0.7.3-macos26-27.dmg"},
     {"id": "model:qwen3.8-27b-splash", "kind": "model", "name": "Qwen3.8 27B", "via": "huggingface", "size_bytes": 22764000000,
-     "dest": "~/models/huggingface", "state": "partial", "role": "chat", "cached_bytes": 14100000000}
+     "dest": "~/models/huggingface", "state": "partial", "role": "chat", "backend": "splash", "cached_bytes": 14100000000}
   ],
   "download_bytes": 9545239063, "enough_disk": true,
   "alternatives": [{"id": "qwen3-8b-omlx", "name": "Qwen3 8B", "backend": "omlx"}]
@@ -173,7 +173,7 @@ The values are illustrative. A role is `null` when no pick is chosen. The top-le
 
 - `machine.hf_home_from` says where the cache folder comes from: `config` (the `hf_home` setting), `env` (`HF_HOME`) or `default`. `free_gb` is the free space on the cache's volume. Paths are shown with `~`.
 - `supported` is `false` when no pick can run: an Intel Mac, less memory than the smallest model needs, a macOS no backend supports, or no pick whose backend can run here. `reason` then says why, in one line, and `pick` is `null`. `reason_hint` is set when something would help: with no Homebrew, the Splash models drop out and it says installing Homebrew would allow them.
-- `pick` is the first chat pick, in `picks.toml` order, that fits the Mac's memory (`min_ram_gb`) and whose backend can run on this macOS (Splash needs macOS 26.4 or later and Homebrew; oMLX needs macOS 15, or 26 and later). It goes by the Mac, not by how much memory is free at this moment, so a busy Mac is not sent a smaller model for good. `pick.fit` is this moment's verdict from the fit check (`fits`, `estimate`, `alone`, `too_big` or `unknown`), for information only: the load step checks again. `alternatives` are the other chat picks that pass the same rules.
+- `pick` is the first chat pick, in `picks.toml` order, that `get` can finish (for now, a Splash pick only when its model is already on this Mac), that fits the Mac's memory (`min_ram_gb`) and whose backend can run on this macOS (Splash needs macOS 26.4 or later and Homebrew; oMLX needs macOS 15, or 26 and later). It goes by the Mac, not by how much memory is free at this moment, so a busy Mac is not sent a smaller model for good. `pick.fit` is this moment's verdict from the fit check (`fits`, `estimate`, `alone`, `too_big` or `unknown`), for information only: the load step checks again. `alternatives` are the other chat picks that pass the same rules.
 - `items` are the pick's backend, the embedding model's backend (when it differs), the chat model and the embedding model, each with a `state` of `done`, `partial` (`cached_bytes` is what is already in the cache) or `todo`. `size_bytes` of a model is the catalog's `disk_gb`.
 - `download_bytes` adds up the items not `done`, less `cached_bytes`. `enough_disk` is `free_gb` of the cache's volume at least that plus 5 GiB.
 
