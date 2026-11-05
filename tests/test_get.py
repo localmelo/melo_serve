@@ -135,7 +135,7 @@ def test_a_download_reports_progress_and_remembers_the_cache(
     states = [e["state"] for e in events]
     assert states[0] == "done" and events[0]["item"] == "config:hf_home"
     assert (events[1]["item"], states[1]) == ("backend:omlx", "skipped")
-    assert states[2:] == ["running", "running", "done"]
+    assert set(states[2:-1]) == {"running"} and states[-1] == "done"
     assert all(e["item"] == "model:qwen3-4b-omlx" for e in events[2:])
     assert all(e["total_bytes"] == TOTAL for e in events[2:])
     assert events[-1] == {
@@ -304,7 +304,10 @@ def test_a_splash_model_is_downloaded_repo_by_repo_and_only_then_is_there(
     assert "not downloaded" in adapter.installed(pick, config)
     code = cli.main(["get", "27b", "--json"])
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert code == 0 and fake.calls == [(GGUF, WANTED), (DRAFT, None)]
+    assert code == 0 and fake.calls == [
+        (GGUF, WANTED),
+        (DRAFT, list(SPLASH_REPOS[DRAFT])),
+    ]
     size = sum(SPLASH_REPOS[GGUF][n] for n in WANTED) + sum(
         SPLASH_REPOS[DRAFT].values()
     )
@@ -385,6 +388,24 @@ def test_a_stop_between_two_repos_stops_the_pick(
     )
 
 
+def test_a_stop_during_xet_is_a_stop_and_bytes_in_memory_show_as_progress(
+    hub: tuple[FakeHub, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake, _ = hub
+
+    def xet(bar: Any) -> None:  # nothing reaches the disk, then the session is aborted
+        bar.update(TOTAL // 2)
+        os.kill(os.getpid(), signal.SIGTERM)
+        raise RuntimeError("Operation cancelled: Task cancelled")
+
+    fake.behaviour = xet
+    code = cli.main(["get", "4b", "--skip", "backend:omlx", "--json"])
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert code == 130 and events[-1]["line"].startswith("Stopped at ")
+    came = [e["done_bytes"] for e in events if e["state"] == "running"]
+    assert max(came) >= TOTAL // 2
+
+
 def test_the_cache_is_read_as_the_hub_lays_it_out(tmp_path: Path) -> None:
     fake = FakeHub(tmp_path / "hf")
     flash, draft = (
@@ -399,7 +420,7 @@ def test_the_cache_is_read_as_the_hub_lays_it_out(tmp_path: Path) -> None:
             "Q8_0/a.gguf": 1,
             mmproj: 1,
         },
-        draft: {"config.json": 1},
+        draft: {"config.json": 1, "model.safetensors": 1},
     }
     pick = catalog.load().resolve("fn")
     config = settings.from_dict(

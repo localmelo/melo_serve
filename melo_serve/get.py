@@ -147,16 +147,18 @@ def _lock_busy(fd: int) -> str | None:
     return None
 
 
-def _progress_class(tick: Callable[[], None]) -> type:
-    """A tqdm that draws nothing; each update ticks (progress, and the stop check)."""
+def _progress_class(tick: Callable[[int], None]) -> type:
+    """A tqdm that draws nothing; each update ticks with the bytes that came, if any
+    (progress, and the stop check). The hub's other bars count files."""
     from huggingface_hub.utils import tqdm
 
     class Ticker(tqdm):  # type: ignore[misc]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.counts_bytes = kwargs.get("unit") == "B"
             super().__init__(*args, **{**kwargs, "disable": True})
 
         def update(self, n: float | None = 1) -> bool | None:
-            tick()
+            tick(int(n or 0) if self.counts_bytes else 0)
             return super().update(n)
 
     return Ticker
@@ -483,16 +485,18 @@ def _download(
         return f"Stopped at {fit.size_text(finished())} / {fit.size_text(total)}. The {KEPT}."
 
     start, lock = finished(), threading.Lock()
-    seen = {"at": 0.0, "bytes": start}
+    seen = {"at": 0.0, "bytes": start, "came": start}
 
-    def tick() -> None:  # runs in the hub's download threads
+    def tick(came: int) -> None:  # runs in the hub's download threads
         if stop.event.is_set() or out.gone:
             raise _Cancelled
         now = time.monotonic()
         with lock:
+            seen["came"] += came
             if now - seen["at"] < out.every:
                 return
-            seen["at"], done = now, on_disk()
+            # Xet holds gigabytes in memory before it writes: the disk lags behind.
+            seen["at"], done = now, min(total, max(on_disk(), int(seen["came"])))
             if done != seen["bytes"]:  # say nothing when nothing moved
                 seen["bytes"] = done
                 out.running(item, pick.name, done, total)
@@ -516,6 +520,9 @@ def _download(
         out.event(item, "failed", stopped())
         return STOPPED
     except Exception as exc:
+        if stop.event.is_set():  # the error of the Xet session that the stop aborted
+            out.event(item, "failed", stopped())
+            return STOPPED
         _fail(out, pick, str(exc), f"the {KEPT}" if finished() > start else NOTHING)
         return FAILED
     finally:
