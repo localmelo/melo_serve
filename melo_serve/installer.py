@@ -105,10 +105,13 @@ def problem(plan: InstallPlan, name: str) -> str:
 
 
 def disk_need(plan: InstallPlan) -> int:
-    """Bytes the home volume needs: what is left to download, and the app."""
+    """Bytes the home volume needs: what is left to download, and the app.
+
+    The app unpacks to about twice the DMG (oMLX 0.7.3: 881 MB to 1.7 GB).
+    """
     part = downloads_dir() / (plan.file + ".part")
     have = part.stat().st_size if part.exists() else 0
-    return max(0, plan.size_bytes - have) + plan.size_bytes
+    return max(0, plan.size_bytes - have) + 2 * plan.size_bytes
 
 
 def _sha256(path: Path) -> str:
